@@ -40,8 +40,16 @@ extension Exif {
         func prepare(on database: Database) async throws {
             try await database
                 .schema(Exif.schema)
-                .field("parameters", .varchar(50))
+                .field("parameters", .varchar(8000))
                 .update()
+        }
+
+        func revert(on database: Database) async throws {
+            try await database
+                .schema(Exif.schema)
+                .field("parameters", .varchar(8000))
+                .update()
+        }
     }
 
     struct AddFilmColumn: AsyncMigration {
