@@ -47,7 +47,7 @@ extension Exif {
         func revert(on database: Database) async throws {
             try await database
                 .schema(Exif.schema)
-                .field("parameters", .varchar(8000))
+                .deleteField("parameters")
                 .update()
         }
     }
