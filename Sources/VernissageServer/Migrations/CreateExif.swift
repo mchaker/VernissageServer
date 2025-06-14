@@ -36,6 +36,14 @@ extension Exif {
         }
     }
 
+    struct AddParameters: AsyncMigration {
+        func prepare(on database: Database) async throws {
+            try await database
+                .schema(Exif.schema)
+                .field("parameters", .varchar(50))
+                .update()
+    }
+
     struct AddFilmColumn: AsyncMigration {
         func prepare(on database: Database) async throws {
             try await database
