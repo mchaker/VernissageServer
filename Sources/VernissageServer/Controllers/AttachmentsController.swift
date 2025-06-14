@@ -9,7 +9,7 @@ import Fluent
 import SwiftGD
 
 extension AttachmentsController: RouteCollection {
-    
+
     @_documentation(visibility: private)
     static let uri: PathComponent = .constant("attachments")
 
@@ -19,7 +19,7 @@ extension AttachmentsController: RouteCollection {
             .grouped("v1")
             .grouped(UserAuthenticator())
             .grouped(UserPayload.guardMiddleware())
-        
+
         photosGroup
             .grouped(XsrfTokenValidatorMiddleware())
             .grouped(EventHandlerMiddleware(.attachmentsCreate))
@@ -37,24 +37,24 @@ extension AttachmentsController: RouteCollection {
             .grouped(EventHandlerMiddleware(.attachmentsHdrDelete))
             .grouped(CacheControlMiddleware(.noStore))
             .on(.DELETE, AttachmentsController.uri, ":id", "hdr", use: deleteHdr)
-        
+
         photosGroup
             .grouped(XsrfTokenValidatorMiddleware())
             .grouped(EventHandlerMiddleware(.attachmentsUpdate))
             .grouped(CacheControlMiddleware(.noStore))
             .put(AttachmentsController.uri, ":id", use: update)
-        
+
         photosGroup
             .grouped(XsrfTokenValidatorMiddleware())
             .grouped(EventHandlerMiddleware(.attachmentsDelete))
             .grouped(CacheControlMiddleware(.noStore))
             .delete(AttachmentsController.uri, ":id", use: delete)
-        
+
         photosGroup
             .grouped(EventHandlerMiddleware(.attachmentsDescribe))
             .grouped(CacheControlMiddleware(.noStore))
             .get(AttachmentsController.uri, ":id", "describe", use: describe)
-        
+
         photosGroup
             .grouped(EventHandlerMiddleware(.attachmentsHashtags))
             .grouped(CacheControlMiddleware(.noStore))
@@ -73,7 +73,7 @@ struct AttachmentsController {
     private struct AttachmentRequest: Content {
         var file: File
     }
-    
+
     /// Upload new photo.
     ///
     /// Image files can be upladed to the server using the `multipart/form-data` encoding algorithm.
@@ -132,32 +132,32 @@ struct AttachmentsController {
         guard let attachmentRequest = try? request.content.decode(AttachmentRequest.self) else {
             throw AttachmentError.missingImage
         }
-        
+
         guard let authorizationPayloadId = request.userId else {
             throw Abort(.forbidden)
         }
-        
+
         let appplicationSettings = request.application.settings.cached
         let imageQuality = appplicationSettings?.imageQuality ?? Constants.imageQuality
         let imageSizeLimit = appplicationSettings?.imageSizeLimit ?? Constants.imageSizeLimit
-        
+
         guard attachmentRequest.file.data.readableBytes < imageSizeLimit else {
             throw AttachmentError.imageTooLarge
         }
 
         let temporaryFileService = request.application.services.temporaryFileService
         let storageService = request.application.services.storageService
-        
+
         // Save image to temp folder.
         let tmpOriginalFileUrl = try await temporaryFileService.save(fileName: attachmentRequest.file.filename,
                                                                      byteBuffer: attachmentRequest.file.data,
                                                                      on: request.executionContext)
-        
+
         // Create image in the memory.
         guard let image = Image.create(path: tmpOriginalFileUrl) else {
             throw AttachmentError.createResizedImageFailed
         }
-        
+
         // Read Exif orientation.
         let orientation = ImageOrientation(fileUrl: tmpOriginalFileUrl, on: request.application)
 
@@ -165,31 +165,31 @@ struct AttachmentsController {
         guard let rotatedImage = image.rotate(basedOn: orientation) else {
             throw AttachmentError.imageRotationFailed
         }
-        
+
         // Export as a JPEG (without metadata).
         guard let exportedBinary = try? rotatedImage.export(as: ExportableFormat.jpg(quality: -1)),
               let exported = try? Image(data: exportedBinary) else {
             throw AttachmentError.imageResizeFailed
         }
-        
+
         // Save exported image in temp folder.
         let tmpExportedFileUrl = try temporaryFileService.temporaryPath(based: attachmentRequest.file.filename, on: request.executionContext)
         exported.write(to: tmpExportedFileUrl, quality: imageQuality)
-        
+
         // Resize image.
         guard let resized = rotatedImage.resizedTo(width: 800) else {
             throw AttachmentError.imageResizeFailed
         }
-        
+
         // Save resized image in temp folder.
         let tmpSmallFileUrl = try temporaryFileService.temporaryPath(based: attachmentRequest.file.filename, on: request.executionContext)
         resized.write(to: tmpSmallFileUrl, quality: imageQuality)
-        
+
         // Save exported image.
         let savedExportedFileName = try await storageService.save(fileName: attachmentRequest.file.filename,
                                                                   url: tmpExportedFileUrl,
                                                                   on: request.executionContext)
-        
+
         // Save small image.
         let savedSmallFileName = try await storageService.save(fileName: attachmentRequest.file.filename,
                                                                url: tmpSmallFileUrl,
@@ -213,26 +213,26 @@ struct AttachmentsController {
                                         userId: authorizationPayloadId,
                                         originalFileId: exportedFileInfo.requireID(),
                                         smallFileId: smallFileInfo.requireID())
-        
+
         // Operation in database should be performed in one transaction.
         try await request.db.transaction { database in
             try await exportedFileInfo.save(on: database)
             try await smallFileInfo.save(on: database)
             try await attachment.save(on: database)
         }
-                    
+
         // Remove temporary files.
         try await temporaryFileService.delete(url: tmpOriginalFileUrl, on: request.executionContext)
         try await temporaryFileService.delete(url: tmpExportedFileUrl, on: request.executionContext)
         try await temporaryFileService.delete(url: tmpSmallFileUrl, on: request.executionContext)
-                
+
         let baseImagesPath = request.application.services.storageService.getBaseImagesPath(on: request.executionContext)
         let temporaryAttachmentDto = TemporaryAttachmentDto(from: attachment,
                                                             originalFileName: savedExportedFileName,
                                                             smallFileName: savedSmallFileName,
                                                             originalHdrUrl: nil,
                                                             baseImagesPath: baseImagesPath)
-        
+
         return try await temporaryAttachmentDto.encodeResponse(status: .created, for: request)
     }
 
@@ -296,11 +296,11 @@ struct AttachmentsController {
         guard let attachmentRequest = try? request.content.decode(AttachmentRequest.self) else {
             throw AttachmentError.missingImage
         }
-        
+
         guard let id = request.parameters.get("id", as: Int64.self) else {
             throw Abort(.badRequest)
         }
-        
+
         guard let authorizationPayloadId = request.userId else {
             throw Abort(.forbidden)
         }
@@ -312,11 +312,11 @@ struct AttachmentsController {
             .with(\.$smallFile)
             .with(\.$originalHdrFile)
             .first()
-        
+
         guard let attachment else {
             throw EntityNotFoundError.attachmentNotFound
         }
-        
+
         guard attachmentRequest.file.data.readableBytes < 4_194_304 else {
             throw AttachmentError.imageTooLarge
         }
@@ -324,20 +324,20 @@ struct AttachmentsController {
         guard attachmentRequest.file.filename.pathExtension == "avif" else {
             throw AttachmentError.onlyAvifHdrFilesAreSupported
         }
-        
+
         let temporaryFileService = request.application.services.temporaryFileService
         let storageService = request.application.services.storageService
-        
+
         // Save image to temp folder.
         let tmpOriginalHdrFileUrl = try await temporaryFileService.save(fileName: attachmentRequest.file.filename,
                                                                         byteBuffer: attachmentRequest.file.data,
                                                                         on: request.executionContext)
-        
+
         // Save orginal image.
         let savedHdrFileName = try await storageService.save(fileName: attachmentRequest.file.filename,
                                                              url: tmpOriginalHdrFileUrl,
                                                              on: request.executionContext)
-        
+
         // Prepare obejct to save in database.
         let originalHdrFileInfoId = request.application.services.snowflakeService.generate()
         let originalHdrFileInfo = FileInfo(id: originalHdrFileInfoId,
@@ -347,26 +347,26 @@ struct AttachmentsController {
 
         // Attach new FileInfo to attachment.
         attachment.$originalHdrFile.id = originalHdrFileInfoId
-        
+
         // Operation in database should be performed in one transaction.
         try await request.db.transaction { database in
             try await originalHdrFileInfo.save(on: database)
             try await attachment.save(on: database)
         }
-                    
+
         // Remove temporary files.
         try await temporaryFileService.delete(url: tmpOriginalHdrFileUrl, on: request.executionContext)
-                
+
         let baseImagesPath = request.application.services.storageService.getBaseImagesPath(on: request.executionContext)
         let temporaryAttachmentDto = TemporaryAttachmentDto(from: attachment,
                                                             originalFileName: attachment.originalFile.fileName,
                                                             smallFileName: attachment.smallFile.fileName,
                                                             originalHdrUrl: savedHdrFileName,
                                                             baseImagesPath: baseImagesPath)
-        
+
         return temporaryAttachmentDto
     }
-    
+
     /// Delete HDR version of photo.
     ///
     /// > Important: Endpoint URL: `/api/v1/attachments/:id/hdr`.
@@ -397,15 +397,15 @@ struct AttachmentsController {
     /// - Throws: `AttachmentError.missingImage` if image is not attached into the request.
     /// - Throws: `AttachmentError.imageTooLarge` if image file is too large.
     @Sendable
-    func deleteHdr(request: Request) async throws -> TemporaryAttachmentDto {        
+    func deleteHdr(request: Request) async throws -> TemporaryAttachmentDto {
         guard let id = request.parameters.get("id", as: Int64.self) else {
             throw Abort(.badRequest)
         }
-        
+
         guard let authorizationPayloadId = request.userId else {
             throw Abort(.forbidden)
         }
-        
+
         let attachment = try await Attachment.query(on: request.db)
             .filter(\.$id == id)
             .filter(\.$user.$id == authorizationPayloadId)
@@ -413,35 +413,35 @@ struct AttachmentsController {
             .with(\.$smallFile)
             .with(\.$originalHdrFile)
             .first()
-        
+
         guard let attachment else {
             throw EntityNotFoundError.attachmentNotFound
         }
-        
+
         try await request.db.transaction { database in
             attachment.$originalHdrFile.id = nil
             try await attachment.save(on: database)
             try await attachment.originalHdrFile?.delete(on: database)
         }
-        
+
         let storageService = request.application.services.storageService
-        
+
         if let orginalHdrFileName = attachment.originalHdrFile?.fileName {
             request.logger.info("Delete orginal HDR file from storage: \(orginalHdrFileName).")
             try await storageService.delete(fileName: orginalHdrFileName, on: request.executionContext)
         }
-        
+
         let baseImagesPath = request.application.services.storageService.getBaseImagesPath(on: request.executionContext)
         let temporaryAttachmentDto = TemporaryAttachmentDto(from: attachment,
                                                             originalFileName: attachment.originalFile.fileName,
                                                             smallFileName: attachment.smallFile.fileName,
                                                             originalHdrUrl: nil,
                                                             baseImagesPath: baseImagesPath)
-        
+
         return temporaryAttachmentDto
     }
-    
-    
+
+
     /// Update photo.
     ///
     /// After the photo is correctly uploaded to the server, we receive its `id` number in response.
@@ -499,35 +499,36 @@ struct AttachmentsController {
         guard let authorizationPayloadId = request.userId else {
             throw Abort(.forbidden)
         }
-        
+
         guard let id = request.parameters.get("id", as: Int64.self) else {
             throw Abort(.badRequest)
         }
-        
+
         guard let temporaryAttachmentDto = try? request.content.decode(TemporaryAttachmentDto.self) else {
             throw Abort(.badRequest)
         }
-        
+
         let attachment = try await Attachment.query(on: request.db)
             .filter(\.$id == id)
             .filter(\.$user.$id == authorizationPayloadId)
             .first()
-        
+
         guard let attachment else {
             throw EntityNotFoundError.attachmentNotFound
         }
-        
+
         try TemporaryAttachmentDto.validate(content: request)
-        
+
         // Operation in database should be performed in one transaction.
         try await request.db.transaction { database in
             attachment.blurhash = temporaryAttachmentDto.blurhash
             attachment.description = temporaryAttachmentDto.description
             attachment.$location.id = temporaryAttachmentDto.locationId?.toId()
             attachment.$license.id = temporaryAttachmentDto.licenseId?.toId()
-            
+
             if let exif = try await attachment.$exif.query(on: database).first() {
                 if temporaryAttachmentDto.hasAnyMetadata() {
+                    exif.parameters = temporaryAttachmentDto.parameters
                     exif.make = temporaryAttachmentDto.make
                     exif.model = temporaryAttachmentDto.model
                     exif.lens = temporaryAttachmentDto.lens
@@ -544,7 +545,7 @@ struct AttachmentsController {
                     exif.longitude = temporaryAttachmentDto.longitude
                     exif.flash = temporaryAttachmentDto.flash
                     exif.focalLength = temporaryAttachmentDto.focalLength
-                    
+
                     try await exif.save(on: database)
                 } else {
                     try await exif.delete(on: database)
@@ -555,6 +556,7 @@ struct AttachmentsController {
 
                     let exif = Exif()
                     exif.id = newExifId
+                    exif.parameters = temporaryAttachmentDto.parameters
                     exif.make = temporaryAttachmentDto.make
                     exif.model = temporaryAttachmentDto.model
                     exif.lens = temporaryAttachmentDto.lens
@@ -571,17 +573,17 @@ struct AttachmentsController {
                     exif.longitude = temporaryAttachmentDto.longitude
                     exif.flash = temporaryAttachmentDto.flash
                     exif.focalLength = temporaryAttachmentDto.focalLength
-                    
+
                     try await attachment.$exif.create(exif, on: database)
                 }
             }
-            
+
             try await attachment.save(on: database)
         }
-            
+
         return HTTPStatus.ok
     }
-    
+
     /// Delete photo.
     ///
     /// When creating a status, users may mistakenly upload a different photo than they wanted.
@@ -612,11 +614,11 @@ struct AttachmentsController {
         guard let authorizationPayloadId = request.userId else {
             throw Abort(.forbidden)
         }
-        
+
         guard let id = request.parameters.get("id", as: Int64.self) else {
             throw Abort(.badRequest)
         }
-        
+
         let attachment = try await Attachment.query(on: request.db)
             .filter(\.$id == id)
             .filter(\.$user.$id == authorizationPayloadId)
@@ -625,34 +627,34 @@ struct AttachmentsController {
             .with(\.$smallFile)
             .with(\.$originalHdrFile)
             .first()
-        
+
         guard let attachment else {
             throw EntityNotFoundError.attachmentNotFound
         }
-        
+
         guard attachment.$user.id == authorizationPayloadId else {
             throw EntityForbiddenError.attachmentForbidden
         }
-        
+
         if attachment.$status.id != nil {
             throw AttachmentError.attachmentAlreadyConnectedToStatus
         }
-                        
+
         // Remve file information from database.
         try await request.db.transaction { database in
-            try await attachment.exif?.delete(on: database)
+            //try await attachment.exif?.delete(on: database)
             try await attachment.delete(on: database)
             try await attachment.originalFile.delete(on: database)
             try await attachment.smallFile.delete(on: database)
             try await attachment.originalHdrFile?.delete(on: database)
         }
-        
+
         let storageService = request.application.services.storageService
-        
+
         // Remove files from external storage provider.
         request.logger.info("Delete orginal file from storage: \(attachment.originalFile.fileName).")
         try await storageService.delete(fileName: attachment.originalFile.fileName, on: request.executionContext)
-        
+
         request.logger.info("Delete small file from storage: \(attachment.smallFile.fileName).")
         try await storageService.delete(fileName: attachment.smallFile.fileName, on: request.executionContext)
 
@@ -660,10 +662,10 @@ struct AttachmentsController {
             request.logger.info("Delete orginal HDR file from storage: \(orginalHdrFileName).")
             try await storageService.delete(fileName: orginalHdrFileName, on: request.executionContext)
         }
-        
+
         return HTTPStatus.ok
     }
-    
+
     /// Generate description for the photo.
     ///
     /// Thanks to this endpoint we can use OpenAI to generate description
@@ -695,59 +697,59 @@ struct AttachmentsController {
         guard let authorizationPayloadId = request.userId else {
             throw Abort(.forbidden)
         }
-        
+
         guard let id = request.parameters.get("id", as: Int64.self) else {
             throw Abort(.badRequest)
         }
-        
+
         let attachment = try await Attachment.query(on: request.db)
             .filter(\.$id == id)
             .filter(\.$user.$id == authorizationPayloadId)
             .with(\.$smallFile)
             .first()
-        
+
         guard let attachment else {
             throw EntityNotFoundError.attachmentNotFound
         }
-        
+
         guard attachment.$user.id == authorizationPayloadId else {
             throw EntityForbiddenError.attachmentForbidden
         }
-        
+
         if attachment.$status.id != nil {
             throw AttachmentError.attachmentAlreadyConnectedToStatus
         }
-        
+
         guard request.application.settings.cached?.isOpenAIEnabled == true else {
             throw OpenAIError.openAIIsNotEnabled
         }
-        
+
         guard let openAIKey = request.application.settings.cached?.openAIKey else {
             throw OpenAIError.openAIIsNotConfigured
         }
-        
+
         guard openAIKey.count > 0 else {
             throw OpenAIError.openAIIsNotConfigured
         }
-        
+
         guard let openAIModel = request.application.settings.cached?.openAIModel else {
             throw OpenAIError.openAIIsNotConfigured
         }
-        
+
         guard openAIModel.count > 0 else {
             throw OpenAIError.openAIIsNotConfigured
         }
-        
+
         let openAIService = request.application.services.openAIService
         let storageService = request.application.services.storageService
-        
+
         let baseImagesPath = storageService.getBaseImagesPath(on: request.executionContext)
         let previewUrl = AttachmentDto.getPreviewUrl(attachment: attachment, baseImagesPath: baseImagesPath)
-        
+
         let description = try await openAIService.generateImageDescription(imageUrl: previewUrl, model: openAIModel, apiKey: openAIKey)
         return AttachmentDescriptionDto(description: description)
     }
-    
+
     /// Generate hashtags for the photo.
     ///
     /// Thanks to this endpoint we can use OpenAI to generate hashtags
@@ -779,55 +781,55 @@ struct AttachmentsController {
         guard let authorizationPayloadId = request.userId else {
             throw Abort(.forbidden)
         }
-        
+
         guard let id = request.parameters.get("id", as: Int64.self) else {
             throw Abort(.badRequest)
         }
-        
+
         let attachment = try await Attachment.query(on: request.db)
             .filter(\.$id == id)
             .filter(\.$user.$id == authorizationPayloadId)
             .with(\.$smallFile)
             .first()
-        
+
         guard let attachment else {
             throw EntityNotFoundError.attachmentNotFound
         }
-        
+
         guard attachment.$user.id == authorizationPayloadId else {
             throw EntityForbiddenError.attachmentForbidden
         }
-        
+
         if attachment.$status.id != nil {
             throw AttachmentError.attachmentAlreadyConnectedToStatus
         }
-        
+
         guard request.application.settings.cached?.isOpenAIEnabled == true else {
             throw OpenAIError.openAIIsNotEnabled
         }
-        
+
         guard let openAIKey = request.application.settings.cached?.openAIKey else {
             throw OpenAIError.openAIIsNotConfigured
         }
-        
+
         guard openAIKey.count > 0 else {
             throw OpenAIError.openAIIsNotConfigured
         }
-        
+
         guard let openAIModel = request.application.settings.cached?.openAIModel else {
             throw OpenAIError.openAIIsNotConfigured
         }
-        
+
         guard openAIModel.count > 0 else {
             throw OpenAIError.openAIIsNotConfigured
         }
-        
+
         let openAIService = request.application.services.openAIService
         let storageService = request.application.services.storageService
-        
+
         let baseImagesPath = storageService.getBaseImagesPath(on: request.executionContext)
         let previewUrl = AttachmentDto.getPreviewUrl(attachment: attachment, baseImagesPath: baseImagesPath)
-        
+
         let hashtags = try await openAIService.generateHashtags(imageUrl: previewUrl, model: openAIModel, apiKey: openAIKey)
         return AttachmentHashtagDto(hashtags: hashtags)
     }

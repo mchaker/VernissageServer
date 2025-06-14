@@ -14,58 +14,61 @@ final class Exif: Model, @unchecked Sendable {
 
     @ID(custom: .id, generatedBy: .user)
     var id: Int64?
-    
+
+    @Field(key: "parameters")
+    var parameters: String?
+
     @Field(key: "make")
     var make: String?
-    
+
     @Field(key: "model")
     var model: String?
-    
+
     @Field(key: "lens")
     var lens: String?
-    
+
     @Field(key: "createDate")
     var createDate: String?
-    
+
     @Field(key: "focalLenIn35mmFilm")
     var focalLenIn35mmFilm: String?
-    
+
     @Field(key: "fNumber")
     var fNumber: String?
-    
+
     @Field(key: "exposureTime")
     var exposureTime: String?
-    
+
     @Field(key: "photographicSensitivity")
     var photographicSensitivity: String?
 
     @Field(key: "software")
     var software: String?
-    
+
     @Field(key: "film")
     var film: String?
-    
+
     @Field(key: "chemistry")
     var chemistry: String?
 
     @Field(key: "scanner")
     var scanner: String?
-    
+
     @Field(key: "latitude")
     var latitude: String?
-    
+
     @Field(key: "longitude")
     var longitude: String?
 
     @Field(key: "flash")
     var flash: String?
-    
+
     @Field(key: "focalLength")
     var focalLength: String?
-    
+
     @Parent(key: "attachmentId")
     var attachment: Attachment
-    
+
     @Timestamp(key: "createdAt", on: .create)
     var createdAt: Date?
 
@@ -75,6 +78,7 @@ final class Exif: Model, @unchecked Sendable {
     init() { }
 
     convenience init?(id: Int64,
+                      parameters: String? = nil,
                       make: String? = nil,
                       model: String? = nil,
                       lens: String? = nil,
@@ -88,16 +92,17 @@ final class Exif: Model, @unchecked Sendable {
                       longitude: String? = nil,
                       flash: String? = nil,
                       focalLength: String? = nil) {
-        if make == nil && model == nil && lens == nil && createDate == nil
+        if parameters == nil && make == nil && model == nil && lens == nil && createDate == nil
             && focalLenIn35mmFilm == nil && fNumber == nil && exposureTime == nil
             && photographicSensitivity == nil && film == nil && latitude == nil && longitude == nil
             && flash == nil && focalLength == nil {
             return nil
         }
-        
+
         self.init()
 
         self.id = id
+        self.parameters = parameters
         self.make = make
         self.model = model
         self.lens = lens
@@ -122,8 +127,9 @@ extension MediaExifDto {
         guard let exif else {
             return nil
         }
-        
+
         self.init(
+            parameters: exif.parameters,
             make: exif.make,
             model: exif.model,
             lens: exif.lens,

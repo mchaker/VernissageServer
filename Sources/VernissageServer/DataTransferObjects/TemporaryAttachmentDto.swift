@@ -13,6 +13,7 @@ struct TemporaryAttachmentDto {
     var originalHdrUrl: String?
     var description: String?
     var blurhash: String?
+    var parameters: String?
     var make: String?
     var model: String?
     var lens: String?
@@ -54,6 +55,7 @@ extension TemporaryAttachmentDto: Validatable {
     static func validations(_ validations: inout Validations) {
         validations.add("description", as: String?.self, is: .count(...2000) || .nil, required: false)
         validations.add("blurhash", as: String?.self, is: .count(...100) || .nil, required: false)
+        validations.add("parameters", as: String?.self, is: .count(...8000) || .nil, required: false)
         validations.add("make", as: String?.self, is: .count(...100) || .nil, required: false)
         validations.add("model", as: String?.self, is: .count(...100) || .nil, required: false)
         validations.add("lens", as: String?.self, is: .count(...100) || .nil, required: false)
@@ -75,6 +77,7 @@ extension TemporaryAttachmentDto: Validatable {
 
 extension TemporaryAttachmentDto {
     public func hasAnyMetadata() -> Bool {
+        parameters != nil ||
         make != nil ||
         model != nil ||
         lens != nil ||
