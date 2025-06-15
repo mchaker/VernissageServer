@@ -317,6 +317,7 @@ extension Application {
         self.migrations.add(PushSubscription.CreateAmmountOfErrorsField())
 
         self.migrations.add(Exif.AddParameters())
+        self.migrations.add(Exif.AddWorkflow())
 
         self.migrations.add(UserAlias.CreateUserAliases())
         self.migrations.add(Exif.AddFilmColumn())

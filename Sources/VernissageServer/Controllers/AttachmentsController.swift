@@ -529,6 +529,7 @@ struct AttachmentsController {
             if let exif = try await attachment.$exif.query(on: database).first() {
                 if temporaryAttachmentDto.hasAnyMetadata() {
                     exif.parameters = temporaryAttachmentDto.parameters
+                    exif.workflow = temporaryAttachmentDto.workflow
                     exif.make = temporaryAttachmentDto.make
                     exif.model = temporaryAttachmentDto.model
                     exif.lens = temporaryAttachmentDto.lens
@@ -557,6 +558,7 @@ struct AttachmentsController {
                     let exif = Exif()
                     exif.id = newExifId
                     exif.parameters = temporaryAttachmentDto.parameters
+                    exif.workflow = temporaryAttachmentDto.workflow
                     exif.make = temporaryAttachmentDto.make
                     exif.model = temporaryAttachmentDto.model
                     exif.lens = temporaryAttachmentDto.lens
@@ -642,7 +644,7 @@ struct AttachmentsController {
 
         // Remve file information from database.
         try await request.db.transaction { database in
-            //try await attachment.exif?.delete(on: database)
+            try await attachment.exif?.delete(on: database)
             try await attachment.delete(on: database)
             try await attachment.originalFile.delete(on: database)
             try await attachment.smallFile.delete(on: database)

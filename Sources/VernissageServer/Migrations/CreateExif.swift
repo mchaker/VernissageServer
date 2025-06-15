@@ -15,7 +15,8 @@ extension Exif {
             try await database
                 .schema(Exif.schema)
                 .field(.id, .int64, .identifier(auto: false))
-                .field("parameters", .varchar(8000))
+                .field("parameters", .varchar(10240))
+                .field("workflow", .varchar(65536))
                 .field("make", .varchar(50))
                 .field("model", .varchar(50))
                 .field("lens", .varchar(50))
@@ -40,7 +41,7 @@ extension Exif {
         func prepare(on database: Database) async throws {
             try await database
                 .schema(Exif.schema)
-                .field("parameters", .varchar(8000))
+                .field("parameters", .varchar(10240))
                 .update()
         }
 
@@ -48,6 +49,22 @@ extension Exif {
             try await database
                 .schema(Exif.schema)
                 .deleteField("parameters")
+                .update()
+        }
+    }
+
+    struct AddWorkflow: AsyncMigration {
+        func prepare(on database: Database) async throws {
+            try await database
+                .schema(Exif.schema)
+                .field("workflow", .varchar(65536))
+                .update()
+        }
+
+        func revert(on database: Database) async throws {
+            try await database
+                .schema(Exif.schema)
+                .deleteField("workflow")
                 .update()
         }
     }
@@ -165,7 +182,12 @@ extension Exif {
 
             try await database
                 .schema(Exif.schema)
-                .updateField("parameters", .varchar(8000))
+                .updateField("parameters", .varchar(10240))
+                .update()
+
+            try await database
+                .schema(Exif.schema)
+                .updateField("workflow", .varchar(65536))
                 .update()
 
             try await database
@@ -217,7 +239,12 @@ extension Exif {
 
             try await database
                 .schema(Exif.schema)
-                .updateField("parameters", .varchar(8000))
+                .updateField("parameters", .varchar(10240))
+                .update()
+
+            try await database
+                .schema(Exif.schema)
+                .updateField("workflow", .varchar(65536))
                 .update()
 
             try await database

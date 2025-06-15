@@ -1742,6 +1742,7 @@ final class StatusesService: StatusesServiceType {
             if let exifDto = attachment.exif,
                let exif = Exif(id: id,
                                parameters: exifDto.parameters,
+                               workflow: exifDto.workflow,
                                make: exifDto.make,
                                model: exifDto.model,
                                lens: exifDto.lens,
