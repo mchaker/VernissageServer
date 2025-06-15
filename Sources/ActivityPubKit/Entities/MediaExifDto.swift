@@ -6,6 +6,7 @@
 
 public struct MediaExifDto {
     public let parameters: String?
+    public let workflow: String?
     public let make: String?
     public let model: String?
     public let lens: String?
@@ -22,6 +23,7 @@ public struct MediaExifDto {
 
     public init(
         parameters: String?,
+        workflow: String?,
         make: String?,
         model: String?,
         lens: String?,
@@ -37,6 +39,7 @@ public struct MediaExifDto {
         focalLength: String?
     ) {
         self.parameters = parameters
+        self.workflow = workflow
         self.make = make
         self.model = model
         self.lens = lens
