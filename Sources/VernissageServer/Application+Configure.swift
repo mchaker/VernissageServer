@@ -63,7 +63,7 @@ extension Application {
 
         // Configure S3 support.
         await configureS3()
-                
+
         // Init Leaf for view rendering.
         self.views.use(.leaf)
     }
@@ -137,7 +137,8 @@ extension Application {
         try self.register(collection: BusinessCardsController())
         try self.register(collection: SharedBusinessCardsController())
         try self.register(collection: OAuthController())
-        
+        try self.register(collection: QuickCaptchaController())
+
         // Profile controller shuld be the last one (it registers: https://example.com/@johndoe).
         try self.register(collection: ProfileController())
     }
@@ -368,10 +369,15 @@ extension Application {
         self.migrations.add(User.CreatePublishedAt())
         self.migrations.add(Status.CreatePublishedAt())
         self.migrations.add(Article.AddAlternativeAuthor())
-        
+
         self.migrations.add(AuthDynamicClient.CreateAuthDynamicClients())
         self.migrations.add(OAuthClientRequest.CreateOAuthClientRequests())
-        
+
+        self.migrations.add(QuickCaptcha.CreateQuickCaptchas())
+        self.migrations.add(QuickCaptcha.AddFilterIndexes())
+
+        self.migrations.add(FailedLogin.CreateFailedLogins())
+
         try await self.autoMigrate()
     }
 
@@ -475,14 +481,17 @@ extension Application {
 
         // Schedule different jobs.
         self.queues.schedule(ClearAttachmentsJob()).hourly().at(15)
+        self.queues.schedule(ShortPeriodTrendingJob()).hourly().at(30)
+        self.queues.schedule(ClearQuickCaptchasJob()).hourly().at(52)
+
         self.queues.schedule(CreateArchiveJob()).daily().at(1, 10)
         self.queues.schedule(DeleteArchiveJob()).daily().at(2, 15)
-        self.queues.schedule(ClearErrorItemsJob()).daily().at(.midnight)
-        self.queues.schedule(ShortPeriodTrendingJob()).hourly().at(30)
         self.queues.schedule(LongPeriodTrendingJob()).daily().at(3, 15)
         self.queues.schedule(LocationsJob()).daily().at(4, 15)
+        self.queues.schedule(ClearErrorItemsJob()).daily().at(5, 15)
+        self.queues.schedule(ClearFailedLoginsJob()).daily().at(5, 30)
 
-        // Purge statuses thrre times per hour.
+        // Purge statuses three times per hour.
         self.queues.schedule(PurgeStatusesJob()).hourly().at(5)
         self.queues.schedule(PurgeStatusesJob()).hourly().at(25)
         self.queues.schedule(PurgeStatusesJob()).hourly().at(45)
