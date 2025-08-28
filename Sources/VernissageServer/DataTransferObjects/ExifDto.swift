@@ -52,7 +52,7 @@ extension ExifDto {
                   flash: exif.flash,
                   focalLength: exif.focalLength)
     }
-    
+
     init?(from exif: ExifHistory?) {
         guard let exif else {
             return nil

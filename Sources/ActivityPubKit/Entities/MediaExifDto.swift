@@ -20,7 +20,7 @@ public struct MediaExifDto {
     public let longitude: String?
     public let flash: String?
     public let focalLength: String?
-    
+
     public init(
         parameters: String?,
         workflow: String?,

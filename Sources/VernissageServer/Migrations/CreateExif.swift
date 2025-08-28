@@ -31,7 +31,7 @@ extension Exif {
                 .field("deletedAt", .datetime)
                 .create()
         }
-        
+
         func revert(on database: Database) async throws {
             try await database.schema(Exif.schema).delete()
         }
@@ -53,6 +53,22 @@ extension Exif {
         }
     }
 
+    struct AddWorkflow: AsyncMigration {
+        func prepare(on database: Database) async throws {
+            try await database
+                .schema(Exif.schema)
+                .field("workflow", .varchar(65536))
+                .update()
+        }
+
+        func revert(on database: Database) async throws {
+            try await database
+                .schema(Exif.schema)
+                .deleteField("workflow")
+                .update()
+        }
+    }
+
     struct AddFilmColumn: AsyncMigration {
         func prepare(on database: Database) async throws {
             try await database
@@ -60,7 +76,7 @@ extension Exif {
                 .field("film", .varchar(50))
                 .update()
         }
-        
+
         func revert(on database: Database) async throws {
             try await database
                 .schema(Exif.schema)
@@ -68,82 +84,82 @@ extension Exif {
                 .update()
         }
     }
-    
+
     struct AddGpsCoordinates: AsyncMigration {
         func prepare(on database: Database) async throws {
             try await database
                 .schema(Exif.schema)
                 .field("latitude", .varchar(50))
                 .update()
-            
+
             try await database
                 .schema(Exif.schema)
                 .field("longitude", .varchar(50))
                 .update()
         }
-        
+
         func revert(on database: Database) async throws {
             try await database
                 .schema(Exif.schema)
                 .deleteField("latitude")
                 .update()
-            
+
             try await database
                 .schema(Exif.schema)
                 .deleteField("longitude")
                 .update()
         }
     }
-    
+
     struct AddSoftware: AsyncMigration {
         func prepare(on database: Database) async throws {
             try await database
                 .schema(Exif.schema)
                 .field("software", .varchar(50))
                 .update()
-            
+
             try await database
                 .schema(Exif.schema)
                 .field("chemistry", .varchar(50))
                 .update()
-            
+
             try await database
                 .schema(Exif.schema)
                 .field("scanner", .varchar(50))
                 .update()
         }
-        
+
         func revert(on database: Database) async throws {
             try await database
                 .schema(Exif.schema)
                 .deleteField("software")
                 .update()
-            
+
             try await database
                 .schema(Exif.schema)
                 .deleteField("chemistry")
                 .update()
-            
+
             try await database
                 .schema(Exif.schema)
                 .deleteField("scanner")
                 .update()
         }
     }
-    
+
     struct AddFlashAndFocalLength: AsyncMigration {
         func prepare(on database: Database) async throws {
             try await database
                 .schema(Exif.schema)
                 .field("flash", .varchar(100))
                 .update()
-            
+
             try await database
                 .schema(Exif.schema)
                 .field("focalLength", .varchar(50))
                 .update()
         }
-        
+
         func revert(on database: Database) async throws {
             try await database
                 .schema(Exif.schema)
@@ -156,7 +172,7 @@ extension Exif {
                 .update()
         }
     }
-    
+
     struct ChangeFieldsLength: AsyncMigration {
         func prepare(on database: Database) async throws {
             // SQLite only supports adding columns in ALTER TABLE statements.
@@ -177,43 +193,43 @@ extension Exif {
                 .schema(Exif.schema)
                 .updateField("make", .varchar(100))
                 .update()
-            
+
             try await database
                 .schema(Exif.schema)
                 .updateField("model", .varchar(100))
                 .update()
-            
+
             try await database
                 .schema(Exif.schema)
                 .updateField("lens", .varchar(100))
                 .update()
-            
+
             try await database
                 .schema(Exif.schema)
                 .updateField("createDate", .varchar(100))
                 .update()
-            
+
             try await database
                 .schema(Exif.schema)
                 .updateField("film", .varchar(100))
                 .update()
-            
+
             try await database
                 .schema(Exif.schema)
                 .updateField("software", .varchar(100))
                 .update()
-            
+
             try await database
                 .schema(Exif.schema)
                 .updateField("chemistry", .varchar(100))
                 .update()
-            
+
             try await database
                 .schema(Exif.schema)
                 .updateField("scanner", .varchar(100))
                 .update()
         }
-        
+
         func revert(on database: Database) async throws {
             // SQLite only supports adding columns in ALTER TABLE statements.
             if let _ = database as? SQLiteDatabase {
@@ -233,44 +249,44 @@ extension Exif {
                 .schema(Exif.schema)
                 .updateField("make", .varchar(50))
                 .update()
-            
+
             try await database
                 .schema(Exif.schema)
                 .updateField("model", .varchar(50))
                 .update()
-            
+
             try await database
                 .schema(Exif.schema)
                 .updateField("lens", .varchar(50))
                 .update()
-            
+
             try await database
                 .schema(Exif.schema)
                 .updateField("createDate", .varchar(50))
                 .update()
-            
+
             try await database
                 .schema(Exif.schema)
                 .updateField("film", .varchar(50))
                 .update()
-            
+
             try await database
                 .schema(Exif.schema)
                 .updateField("software", .varchar(50))
                 .update()
-            
+
             try await database
                 .schema(Exif.schema)
                 .updateField("chemistry", .varchar(50))
                 .update()
-            
+
             try await database
                 .schema(Exif.schema)
                 .updateField("scanner", .varchar(50))
                 .update()
         }
     }
-    
+
     struct AddAttachmentIdIndex: AsyncMigration {
         func prepare(on database: Database) async throws {
             if let sqlDatabase = database as? SQLDatabase {
@@ -281,7 +297,7 @@ extension Exif {
                     .run()
             }
         }
-        
+
         func revert(on database: Database) async throws {
             if let sqlDatabase = database as? SQLDatabase {
                 try await sqlDatabase
