@@ -7,6 +7,8 @@
 import Vapor
 
 struct ExifDto {
+    var parameters: String?
+    var workflow: String?
     var make: String?
     var model: String?
     var lens: String?
@@ -30,8 +32,10 @@ extension ExifDto {
         guard let exif else {
             return nil
         }
-        
-        self.init(make: exif.make,
+
+        self.init(parameters: exif.parameters,
+                  workflow: exif.workflow,
+                  make: exif.make,
                   model: exif.model,
                   lens: exif.lens,
                   createDate: exif.createDate,
@@ -53,8 +57,10 @@ extension ExifDto {
         guard let exif else {
             return nil
         }
-        
-        self.init(make: exif.make,
+
+        self.init(parameters: exif.parameters,
+                  workflow: exif.workflow,
+                  make: exif.make,
                   model: exif.model,
                   lens: exif.lens,
                   createDate: exif.createDate,
@@ -77,6 +83,8 @@ extension ExifDto: Content { }
 
 extension ExifDto {
     public func hasAnyMetadata() -> Bool {
+        parameters != nil ||
+        workflow != nil ||
         make != nil ||
         model != nil ||
         lens != nil ||

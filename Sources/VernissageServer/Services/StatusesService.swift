@@ -2680,6 +2680,8 @@ final class StatusesService: StatusesServiceType {
             let id = context.application.services.snowflakeService.generate()
             if let exifDto = attachment.exif,
                let exif = Exif(id: id,
+                               parameters: exifDto.parameters,
+                               workflow: exifDto.workflow,
                                make: exifDto.make,
                                model: exifDto.model,
                                lens: exifDto.lens,

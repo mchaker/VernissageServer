@@ -14,7 +14,13 @@ final class Exif: Model, @unchecked Sendable {
 
     @ID(custom: .id, generatedBy: .user)
     var id: Int64?
-    
+
+    @Field(key: "parameters")
+    var parameters: String?
+
+    @Field(key: "workflow")
+    var workflow: String?
+
     @Field(key: "make")
     var make: String?
     
@@ -75,6 +81,8 @@ final class Exif: Model, @unchecked Sendable {
     init() { }
 
     convenience init?(id: Int64,
+                      parameters: String? = nil,
+                      workflow: String? = nil,
                       make: String? = nil,
                       model: String? = nil,
                       lens: String? = nil,
@@ -88,7 +96,7 @@ final class Exif: Model, @unchecked Sendable {
                       longitude: String? = nil,
                       flash: String? = nil,
                       focalLength: String? = nil) {
-        if make == nil && model == nil && lens == nil && createDate == nil
+        if parameters == nil && workflow == nil && if make == nil && model == nil && lens == nil && createDate == nil
             && focalLenIn35mmFilm == nil && fNumber == nil && exposureTime == nil
             && photographicSensitivity == nil && film == nil && latitude == nil && longitude == nil
             && flash == nil && focalLength == nil {
@@ -98,6 +106,8 @@ final class Exif: Model, @unchecked Sendable {
         self.init()
 
         self.id = id
+        self.parameters = parameters
+        self.workflow = workflow
         self.make = make
         self.model = model
         self.lens = lens
@@ -124,6 +134,8 @@ extension MediaExifDto {
         }
         
         self.init(
+            parameters: exif.parameters,
+            workflow: exif.workflow,
             make: exif.make,
             model: exif.model,
             lens: exif.lens,

@@ -552,3 +552,4 @@ healthchecksdb
 MigrationBackup/
 
 # End of https://www.gitignore.io/api/macos,xcode,linux,vapor,swift,swiftpm,windows,visualstudio,visualstudiocode,swiftpackagemanager
+/.zed

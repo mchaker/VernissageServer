@@ -15,6 +15,8 @@ extension Exif {
             try await database
                 .schema(Exif.schema)
                 .field(.id, .int64, .identifier(auto: false))
+                .field("parameters", .varchar(10240))
+                .field("workflow", .varchar(65536))
                 .field("make", .varchar(50))
                 .field("model", .varchar(50))
                 .field("lens", .varchar(50))
@@ -34,7 +36,23 @@ extension Exif {
             try await database.schema(Exif.schema).delete()
         }
     }
-    
+
+    struct AddParameters: AsyncMigration {
+        func prepare(on database: Database) async throws {
+            try await database
+                .schema(Exif.schema)
+                .field("parameters", .varchar(10240))
+                .update()
+        }
+
+        func revert(on database: Database) async throws {
+            try await database
+                .schema(Exif.schema)
+                .deleteField("parameters")
+                .update()
+        }
+    }
+
     struct AddFilmColumn: AsyncMigration {
         func prepare(on database: Database) async throws {
             try await database
@@ -131,7 +149,7 @@ extension Exif {
                 .schema(Exif.schema)
                 .deleteField("flash")
                 .update()
-            
+
             try await database
                 .schema(Exif.schema)
                 .deleteField("focalLength")
@@ -145,7 +163,16 @@ extension Exif {
             if let _ = database as? SQLiteDatabase {
                 return
             }
-            
+
+            try await database
+                .schema(Exif.schema)
+                .updateField("parameters", .varchar(10240))
+                .update()
+
+            try await database
+                .schema(Exif.schema)
+                .updateField("workflow", .varchar(65536))
+
             try await database
                 .schema(Exif.schema)
                 .updateField("make", .varchar(100))
@@ -192,6 +219,15 @@ extension Exif {
             if let _ = database as? SQLiteDatabase {
                 return
             }
+
+            try await database
+                .schema(Exif.schema)
+                .updateField("parameters", .varchar(10240))
+                .update()
+
+            try await database
+                .schema(Exif.schema)
+                .updateField("workflow", .varchar(65536))
 
             try await database
                 .schema(Exif.schema)
