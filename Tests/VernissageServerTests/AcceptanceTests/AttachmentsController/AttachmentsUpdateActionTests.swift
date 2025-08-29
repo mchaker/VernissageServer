@@ -11,18 +11,18 @@ import Testing
 import Fluent
 
 extension ControllersTests {
-    
+
     @Suite("Attachments (PUT /attachments)", .serialized, .tags(.attachments))
     struct AttachmentsUpdateActionTests {
         var application: Application!
-        
+
         init() async throws {
             self.application = try await ApplicationManager.shared.application()
         }
-        
+
         @Test("Attachment should be updated with correct data")
         func attachmentShouldBeUpdatedWithCorrectData() async throws {
-            
+
             // Arrange.
             let user = try await application.createUser(userName: "rickbutix")
             let location = try await application.createLocation(name: "Wrocław")
@@ -31,11 +31,11 @@ extension ControllersTests {
             defer {
                 let orginalFileUrl = URL(fileURLWithPath: "\(FileManager.default.currentDirectoryPath)/Public/storage/\(attachment.originalFile.fileName)")
                 try? FileManager.default.removeItem(at: orginalFileUrl)
-                
+
                 let smalFileUrl = URL(fileURLWithPath: "\(FileManager.default.currentDirectoryPath)/Public/storage/\(attachment.smallFile.fileName)")
                 try? FileManager.default.removeItem(at: smalFileUrl)
             }
-            
+
             let temporaryAttachmentDto = TemporaryAttachmentDto(id: attachment.stringId(),
                                                                 url: "",
                                                                 previewUrl: "",
@@ -61,7 +61,7 @@ extension ControllersTests {
                                                                 longitude: "17,92533",
                                                                 flash: "Fired",
                                                                 focalLength: "56")
-            
+
             // Act.
             let response = try await application.sendRequest(
                 as: .user(userName: "rickbutix", password: "p@ssword"),
@@ -69,29 +69,29 @@ extension ControllersTests {
                 method: .PUT,
                 body: temporaryAttachmentDto
             )
-            
+
             // Assert.
             #expect(response.status == HTTPResponseStatus.ok, "Response http status code should be ok (200).")
             guard let updatedAttachment = try? await application.getAttachment(userId: user.requireID()) else {
                 #expect(Bool(false), "Attachment was not found")
                 return
             }
-            
+
             guard let attachmentExif = updatedAttachment.exif else {
                 #expect(Bool(false), "Exif metadata was not found")
                 return
             }
-            
+
             guard let attachmentLocation = updatedAttachment.location else {
                 #expect(Bool(false), "Location was not found")
                 return
             }
-            
+
             guard let attachmentLicense = updatedAttachment.license else {
                 #expect(Bool(false), "License was not found")
                 return
             }
-            
+
             #expect(updatedAttachment.stringId() == temporaryAttachmentDto.id, "Attachment id should be correct.")
             #expect(updatedAttachment.description == temporaryAttachmentDto.description, "Attachment description should be correct.")
             #expect(updatedAttachment.blurhash == temporaryAttachmentDto.blurhash, "Attachment blurhash should be correct.")
@@ -116,26 +116,26 @@ extension ControllersTests {
             #expect(attachmentLocation.name == location.name, "Attachment location name should be correct.")
             #expect(attachmentLicense.name == license?.name, "Attachment license name should be correct.")
         }
-        
+
         @Test("Attachment should not be updated with too long descrioption")
         func attachmentShouldNotBeUpdatedWithTooLongDescrioption() async throws {
-            
+
             // Arrange.
             let user = try await application.createUser(userName: "martinbutix")
             let attachment = try await application.createAttachment(user: user)
             defer {
                 let orginalFileUrl = URL(fileURLWithPath: "\(FileManager.default.currentDirectoryPath)/Public/storage/\(attachment.originalFile.fileName)")
                 try? FileManager.default.removeItem(at: orginalFileUrl)
-                
+
                 let smalFileUrl = URL(fileURLWithPath: "\(FileManager.default.currentDirectoryPath)/Public/storage/\(attachment.smallFile.fileName)")
                 try? FileManager.default.removeItem(at: smalFileUrl)
             }
-            
+
             let temporaryAttachmentDto = TemporaryAttachmentDto(id: attachment.stringId(),
                                                                 url: "",
                                                                 previewUrl: "",
                                                                 description: String.createRandomString(length: 2001))
-            
+
             // Act.
             let errorResponse = try await application.getErrorResponse(
                 as: .user(userName: "martinbutix", password: "p@ssword"),
@@ -143,33 +143,33 @@ extension ControllersTests {
                 method: .PUT,
                 data: temporaryAttachmentDto
             )
-            
+
             // Assert.
             #expect(errorResponse.status == HTTPResponseStatus.badRequest, "Response http status code should be bad request (400).")
             #expect(errorResponse.error.code == "validationError", "Error code should be equal 'validationError'.")
             #expect(errorResponse.error.reason == "Validation errors occurs.")
             #expect(errorResponse.error.failures?.getFailure("description") == "is greater than maximum of 2000 character(s) and is not null")
         }
-        
+
         @Test("Attachment should not be updated with too long blurhash")
         func attachmentShouldNotBeUpdatedWithTooLongBlurhash() async throws {
-            
+
             // Arrange.
             let user = try await application.createUser(userName: "trondbutix")
             let attachment = try await application.createAttachment(user: user)
             defer {
                 let orginalFileUrl = URL(fileURLWithPath: "\(FileManager.default.currentDirectoryPath)/Public/storage/\(attachment.originalFile.fileName)")
                 try? FileManager.default.removeItem(at: orginalFileUrl)
-                
+
                 let smalFileUrl = URL(fileURLWithPath: "\(FileManager.default.currentDirectoryPath)/Public/storage/\(attachment.smallFile.fileName)")
                 try? FileManager.default.removeItem(at: smalFileUrl)
             }
-            
+
             let temporaryAttachmentDto = TemporaryAttachmentDto(id: attachment.stringId(),
                                                                 url: "",
                                                                 previewUrl: "",
                                                                 blurhash: String.createRandomString(length: 101))
-            
+
             // Act.
             let errorResponse = try await application.getErrorResponse(
                 as: .user(userName: "trondbutix", password: "p@ssword"),
@@ -177,17 +177,17 @@ extension ControllersTests {
                 method: .PUT,
                 data: temporaryAttachmentDto
             )
-            
+
             // Assert.
             #expect(errorResponse.status == HTTPResponseStatus.badRequest, "Response http status code should be bad request (400).")
             #expect(errorResponse.error.code == "validationError", "Error code should be equal 'validationError'.")
             #expect(errorResponse.error.reason == "Validation errors occurs.")
             #expect(errorResponse.error.failures?.getFailure("blurhash") == "is greater than maximum of 100 character(s) and is not null")
         }
-        
+
         @Test("Attachment should not be updated when other user tries to update")
         func attachmentShouldNotBeUpdatedWhenOtherUserTriesToUpdate() async throws {
-            
+
             // Arrange.
             _ = try await application.createUser(userName: "annabutix")
             let user = try await application.createUser(userName: "martabutix")
@@ -195,16 +195,16 @@ extension ControllersTests {
             defer {
                 let orginalFileUrl = URL(fileURLWithPath: "\(FileManager.default.currentDirectoryPath)/Public/storage/\(attachment.originalFile.fileName)")
                 try? FileManager.default.removeItem(at: orginalFileUrl)
-                
+
                 let smalFileUrl = URL(fileURLWithPath: "\(FileManager.default.currentDirectoryPath)/Public/storage/\(attachment.smallFile.fileName)")
                 try? FileManager.default.removeItem(at: smalFileUrl)
             }
-            
+
             let temporaryAttachmentDto = TemporaryAttachmentDto(id: attachment.stringId(),
                                                                 url: "",
                                                                 previewUrl: "",
                                                                 description: "Changed...")
-            
+
             // Act.
             let errorResponse = try await application.getErrorResponse(
                 as: .user(userName: "annabutix", password: "p@ssword"),
@@ -212,7 +212,7 @@ extension ControllersTests {
                 method: .PUT,
                 data: temporaryAttachmentDto
             )
-            
+
             // Assert.
             #expect(errorResponse.status == HTTPResponseStatus.notFound, "Response http status code should be not found (404).")
         }

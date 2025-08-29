@@ -15,24 +15,24 @@ struct StatusesServiceTests {
 
     var application: Application!
     let externalImageUrl = "https://github.com/VernissageApp/VernissageServer/blob/a7f6eae06751ad2b17d86d443d737251db3eadb4/Tests/VernissageServerTests/Assets/001.png?raw=true"
-    
+
     init() async throws {
         self.application = try await ApplicationManager.shared.application()
     }
-    
+
     @Test("Correct category should be returned for list of tags.")
     func correctCategoryShouldBeReturnedForListOfTags() async throws {
         // Arrange.
         let statusesService = StatusesService()
         let noteTagDtos = [NoteTagDto(type: "hashtag", name: "Street", href: ""), NoteTagDto(type: "hashtag", name: "Street", href: "")]
-        
+
         // Act.
         let category = try await statusesService.getCategory(basedOn: noteTagDtos, and: [], on: application.db)
-        
+
         // Assert.
         #expect(category?.name == "Street", "Street category should be returned.")
     }
-    
+
     @Test("Higher priority category should be returned for list of tags.")
     func higherPriorityCategoryShouldBeReturnedForListOfTags() async throws {
         // Arrange.
@@ -40,14 +40,14 @@ struct StatusesServiceTests {
         try await self.application.setCategoryPriority(name: "Animals", priority: 1)
         try await self.application.setCategoryPriority(name: "Nature", priority: 2)
         let noteTagDtos = [NoteTagDto(type: "hashtag", name: "nature", href: ""), NoteTagDto(type: "hashtag", name: "pet", href: "")]
-        
+
         // Act.
         let category = try await statusesService.getCategory(basedOn: noteTagDtos, and: [], on: application.db)
-        
+
         // Assert.
         #expect(category?.name == "Animals", "Animals category should be returned.")
     }
-    
+
     @Test("New status should be added to user's timeline when author is not muted.")
     func newStatusShouldBeAddedToUsersTimelineWhenAuthorIsNotMuted() async throws {
         // Arrange.
@@ -59,18 +59,18 @@ struct StatusesServiceTests {
         defer {
             application.clearFiles(attachments: attachments)
         }
-        
+
         _ = try await application.createFollow(sourceId: user2.requireID(), targetId: user1.requireID(), approved: true)
-        
+
         // Act.
         let queueContext = application.getQueueContext(queueName: QueueName(string: "ActivityPubSharedInboxJob"))
         try await statusesService.createOnLocalTimeline(followersOf: user1.requireID(), status: statuses.first!, on: queueContext.executionContext)
-        
+
         // Assert.
         let userStatuses = try await application.getAllUserStatuses(for: statuses.first!.requireID())
         #expect(userStatuses.count == 1, "Statuses should be added to user's timelines.")
     }
-    
+
     @Test("New status should be added to user's timeline when author is muted in the past.")
     func newStatusShouldBeAddedToUsersTimelineWhenAuthorIsMutedInThePast() async throws {
         // Arrange.
@@ -82,19 +82,19 @@ struct StatusesServiceTests {
         defer {
             application.clearFiles(attachments: attachments)
         }
-        
+
         _ = try await application.createFollow(sourceId: user2.requireID(), targetId: user1.requireID(), approved: true)
         _ = try await application.createUserMute(userId: user2.requireID(), mutedUserId: user1.requireID(), muteStatuses: true, muteReblogs: true, muteNotifications: true, muteEnd: Date.yesterday)
-        
+
         // Act.
         let queueContext = application.getQueueContext(queueName: QueueName(string: "ActivityPubSharedInboxJob"))
         try await statusesService.createOnLocalTimeline(followersOf: user1.requireID(), status: statuses.first!, on: queueContext.executionContext)
-        
+
         // Assert.
         let userStatuses = try await application.getAllUserStatuses(for: statuses.first!.requireID())
         #expect(userStatuses.count == 1, "Statuses should be added to user's timelines.")
     }
-    
+
     @Test("Rebloged status should be added to user's timeline when author reblogs are not muted.")
     func reblogedStatusShouldBeAddedToUsersTimelineWhenAuthorReblogsAreNotMuted() async throws {
         // Arrange.
@@ -107,19 +107,19 @@ struct StatusesServiceTests {
         defer {
             application.clearFiles(attachments: attachments)
         }
-        
+
         _ = try await application.createFollow(sourceId: user3.requireID(), targetId: user2.requireID(), approved: true)
         let reblogStatus = try await application.reblogStatus(user: user2, status: statuses.first!)
-        
+
         // Act.
         let queueContext = application.getQueueContext(queueName: QueueName(string: "ActivityPubSharedInboxJob"))
         try await statusesService.createOnLocalTimeline(followersOf: user2.requireID(), status: reblogStatus, on: queueContext.executionContext)
-        
+
         // Assert.
         let userStatuses = try await application.getAllUserStatuses(for: reblogStatus.requireID())
         #expect(userStatuses.count == 1, "Statuses should be added to user's timelines.")
     }
-    
+
     @Test("New status should not be added to user's timeline when author is muted.")
     func newStatusShouldNotBeAddedToUsersTimelineWhenAuthorIsMuted() async throws {
         // Arrange.
@@ -131,19 +131,19 @@ struct StatusesServiceTests {
         defer {
             application.clearFiles(attachments: attachments)
         }
-        
+
         _ = try await application.createFollow(sourceId: user2.requireID(), targetId: user1.requireID(), approved: true)
         _ = try await application.createUserMute(userId: user2.requireID(), mutedUserId: user1.requireID(), muteStatuses: true, muteReblogs: false, muteNotifications: false)
-        
+
         // Act.
         let queueContext = application.getQueueContext(queueName: QueueName(string: "ActivityPubSharedInboxJob"))
         try await statusesService.createOnLocalTimeline(followersOf: user1.requireID(), status: statuses.first!, on: queueContext.executionContext)
-        
+
         // Assert.
         let userStatuses = try await application.getAllUserStatuses(for: statuses.first!.requireID())
         #expect(userStatuses.count == 0, "Statuses should be added to user's timelines.")
     }
-    
+
     @Test("New status should be added to user's timeline when author is muted only reblogs.")
     func newStatusShouldBeAddedToUsersTimelineWhenAuthorIsMutedOnlyReblogs() async throws {
         // Arrange.
@@ -155,19 +155,19 @@ struct StatusesServiceTests {
         defer {
             application.clearFiles(attachments: attachments)
         }
-        
+
         _ = try await application.createFollow(sourceId: user2.requireID(), targetId: user1.requireID(), approved: true)
         _ = try await application.createUserMute(userId: user2.requireID(), mutedUserId: user1.requireID(), muteStatuses: false, muteReblogs: true, muteNotifications: false)
-        
+
         // Act.
         let queueContext = application.getQueueContext(queueName: QueueName(string: "ActivityPubSharedInboxJob"))
         try await statusesService.createOnLocalTimeline(followersOf: user1.requireID(), status: statuses.first!, on: queueContext.executionContext)
-        
+
         // Assert.
         let userStatuses = try await application.getAllUserStatuses(for: statuses.first!.requireID())
         #expect(userStatuses.count == 1, "Statuses should be added to user's timelines.")
     }
-    
+
     @Test("New status should be added to user's timeline when author is muted only notifications.")
     func newStatusShouldBeAddedToUsersTimelineWhenAuthorIsMutedOnlyNotifications() async throws {
         // Arrange.
@@ -179,19 +179,19 @@ struct StatusesServiceTests {
         defer {
             application.clearFiles(attachments: attachments)
         }
-        
+
         _ = try await application.createFollow(sourceId: user2.requireID(), targetId: user1.requireID(), approved: true)
         _ = try await application.createUserMute(userId: user2.requireID(), mutedUserId: user1.requireID(), muteStatuses: false, muteReblogs: false, muteNotifications: true)
-        
+
         // Act.
         let queueContext = application.getQueueContext(queueName: QueueName(string: "ActivityPubSharedInboxJob"))
         try await statusesService.createOnLocalTimeline(followersOf: user1.requireID(), status: statuses.first!, on: queueContext.executionContext)
-        
+
         // Assert.
         let userStatuses = try await application.getAllUserStatuses(for: statuses.first!.requireID())
         #expect(userStatuses.count == 1, "Statuses should be added to user's timelines.")
     }
-    
+
     @Test("Reblog status should not be added to user's timeline when author reblogs are muted.")
     func reblogStatusShouldNotBeAddedToUsersTimelineWhenAuthorReblogsAreMuted() async throws {
         // Arrange.
@@ -204,21 +204,21 @@ struct StatusesServiceTests {
         defer {
             application.clearFiles(attachments: attachments)
         }
-        
+
         _ = try await application.createFollow(sourceId: user3.requireID(), targetId: user2.requireID(), approved: true)
         _ = try await application.createUserMute(userId: user3.requireID(), mutedUserId: user2.requireID(), muteStatuses: false, muteReblogs: true, muteNotifications: false)
-        
+
         let reblogStatus = try await application.reblogStatus(user: user2, status: statuses.first!)
-        
+
         // Act.
         let queueContext = application.getQueueContext(queueName: QueueName(string: "ActivityPubSharedInboxJob"))
         try await statusesService.createOnLocalTimeline(followersOf: user2.requireID(), status: reblogStatus, on: queueContext.executionContext)
-        
+
         // Assert.
         let userStatuses = try await application.getAllUserStatuses(for: reblogStatus.requireID())
         #expect(userStatuses.count == 0, "Statuses should be added to user's timelines.")
     }
-    
+
     @Test("Reblog status should not be added to user's timeline when status author is muted.")
     func reblogStatusShouldNotBeAddedToUsersTimelineWhenStatusAuthorIsMuted() async throws {
         // Arrange.
@@ -231,28 +231,28 @@ struct StatusesServiceTests {
         defer {
             application.clearFiles(attachments: attachments)
         }
-        
+
         _ = try await application.createFollow(sourceId: user3.requireID(), targetId: user2.requireID(), approved: true)
         _ = try await application.createUserMute(userId: user3.requireID(), mutedUserId: user1.requireID(), muteStatuses: true, muteReblogs: false, muteNotifications: false)
-        
+
         let reblogStatus = try await application.reblogStatus(user: user2, status: statuses.first!)
-        
+
         // Act.
         let queueContext = application.getQueueContext(queueName: QueueName(string: "ActivityPubSharedInboxJob"))
         try await statusesService.createOnLocalTimeline(followersOf: user2.requireID(), status: reblogStatus, on: queueContext.executionContext)
-        
+
         // Assert.
         let userStatuses = try await application.getAllUserStatuses(for: reblogStatus.requireID())
         #expect(userStatuses.count == 0, "Statuses should be added to user's timelines.")
     }
-    
+
     @Test("Status should be updated based on updated note from ActivityPub request")
     func statusShouldBeUpdateBasedOnUpdatedNoteFromActivityPubRequest() async throws {
         // Arrange.
         let statusesService = StatusesService()
         let user1 = try await application.createUser(userName: "fortnivolop")
         let user2 = try await application.createUser(userName: "vikivolop")
-        
+
         let category = try await application.getCategory(name: "Sport")
         let (statuses, attachments) = try await application.createStatuses(user: user1,
                                                                            notePrefix: "Local timeline #football and @adam@localhost.com",
@@ -261,9 +261,9 @@ struct StatusesServiceTests {
         defer {
             application.clearFiles(attachments: attachments)
         }
-        
+
         _ = try await application.reblogStatus(user: user2, status: statuses.first!)
-        
+
         let statusFromDatabase = try await statusesService.get(id: statuses.first!.requireID(), on: application.db)
         let noteDto = NoteDto(id: statusFromDatabase?.activityPubUrl ?? "",
                               summary: "Content warning",
@@ -309,12 +309,12 @@ struct StatusesServiceTests {
                                 NoteTagDto(type: "Hashtag", name: "street", href: "http://localhost:8080/hashtags/street")
                               ])
         )
-        
-        
+
+
         // Act.
         let queueContext = application.getQueueContext(queueName: QueueName(string: "ActivityPubSharedInboxJob"))
         let statusAfterUpdate = try await statusesService.update(status: statusFromDatabase!, basedOn: noteDto, on: queueContext.executionContext)
-        
+
         // Assert.
         #expect(statusAfterUpdate.note == "This is #street new content @gigifoter@localhost.com", "Note should be saved in updated status.")
         #expect(statusAfterUpdate.updatedByUserAt?.toISO8601String() == noteDto.updated, "Upadted date should be saved in updated status.")
@@ -343,10 +343,10 @@ struct StatusesServiceTests {
         #expect(statusAfterUpdate.attachments.first?.exif?.focalLength == "120", "Exif make of new attachment should be saved in updated status.")
         #expect(statusAfterUpdate.hashtags.contains(where: { $0.hashtag == "street" }) == true, "Hashtag should be saved in updated status.")
         #expect(statusAfterUpdate.mentions.contains(where: { $0.userName == "gigifoter@localhost.com" }) == true, "Mention should be saved in updated status.")
-        
+
         let statusHistoryFromDatabase = try await application.getStatusHistory(statusId: statusAfterUpdate.requireID())
         #expect(statusHistoryFromDatabase != nil, "Status history should be saved.")
-        
+
         let statusHistory = statusHistoryFromDatabase!
         #expect(statusHistory.note == "Local timeline #football and @adam@localhost.com 1", "Note should be saved in updated status.")
         #expect(statusHistory.sensitive == false, "Sensitive should be saved in history status.")
@@ -361,7 +361,7 @@ struct StatusesServiceTests {
         #expect(statusHistory.attachments.first?.exif?.createDate == "2023-07-13T20:15:35.319+02:00", "Exif make of new attachment should be saved in history status.")
         #expect(statusHistory.hashtags.contains(where: { $0.hashtag == "football" }) == true, "Hashtag should be saved in history status.")
         #expect(statusHistory.mentions.contains(where: { $0.userName == "adam@localhost.com" }) == true, "Mention should be saved in history status.")
-        
+
         let notification = try await application.getNotification(type: .update, to: user2.requireID(), by: user1.requireID(), statusId: statusAfterUpdate.requireID())
         #expect(notification != nil, "Notification about update should be added.")
     }

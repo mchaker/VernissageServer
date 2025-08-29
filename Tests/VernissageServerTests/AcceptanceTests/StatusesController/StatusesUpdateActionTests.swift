@@ -11,18 +11,18 @@ import Testing
 import Fluent
 
 extension ControllersTests {
-    
+
     @Suite("Statuses (PUT /statuses/:id)", .serialized, .tags(.statuses))
     struct StatusesUpdateActionTests {
         var application: Application!
-        
+
         init() async throws {
             self.application = try await ApplicationManager.shared.application()
         }
-        
+
         @Test("Status should be updated by authorized user")
         func statusShouldBeUpdatedByAuthorizedUser() async throws {
-            
+
             // Arrange.
             let categorySport = try await application.getCategory(name: "Sport")
             let categoryStreet = try await application.getCategory(name: "Street")
@@ -57,7 +57,7 @@ extension ControllersTests {
                 application.clearFiles(attachments: attachments)
                 application.clearFiles(attachments: [attachment])
             }
-            
+
             let statusRequestDto = StatusRequestDto(note: "This is #street new content @gigifoter@localhost.com",
                                                     visibility: .public,
                                                     sensitive: true,
@@ -66,7 +66,7 @@ extension ControllersTests {
                                                     categoryId: categorySport?.stringId(),
                                                     replyToStatusId: nil,
                                                     attachmentIds: [attachment.stringId()!])
-            
+
             // Act.
             let updatedStatusDto = try await application.getResponse(
                 as: .user(userName: "robinurlich", password: "p@ssword"),
@@ -75,7 +75,7 @@ extension ControllersTests {
                 data: statusRequestDto,
                 decodeTo: StatusDto.self
             )
-            
+
             // Assert.
             #expect(updatedStatusDto.id != nil, "Status wasn't created.")
             #expect(statusRequestDto.note == updatedStatusDto.note, "Status note should be correct.")
@@ -87,7 +87,7 @@ extension ControllersTests {
             #expect(updatedStatusDto.user.userName == "robinurlich", "User should be returned.")
             #expect(updatedStatusDto.category?.name == "Sport", "Category should be correct.")
             #expect(updatedStatusDto.publishedAt != nil, "Published at date should be set.")
-            
+
             let statusAfterUpdate = try await application.services.statusesService.get(id: statuses.first!.requireID(), on: application.db)!
             #expect(statusAfterUpdate.note == "This is #street new content @gigifoter@localhost.com", "Note should be saved in updated status.")
             #expect(statusAfterUpdate.sensitive == true, "Sensitive should be saved in updated status.")
@@ -113,10 +113,10 @@ extension ControllersTests {
             #expect(statusAfterUpdate.attachments.first?.exif?.focalLength == "120", "Exif make of new attachment should be saved in updated status.")
             #expect(statusAfterUpdate.hashtags.contains(where: { $0.hashtag == "street" }) == true, "Hashtag should be saved in updated status.")
             #expect(statusAfterUpdate.mentions.contains(where: { $0.userName == "gigifoter@localhost.com" }) == true, "Mention should be saved in updated status.")
-            
+
             let statusHistoryFromDatabase = try await application.getStatusHistory(statusId: statusAfterUpdate.requireID())
             #expect(statusHistoryFromDatabase != nil, "Status history should be saved.")
-            
+
             let statusHistory = statusHistoryFromDatabase!
             #expect(statusHistory.note == "Local timeline #football and @adam@localhost.com 1", "Note should be saved in updated status.")
             #expect(statusHistory.sensitive == false, "Sensitive should be saved in history status.")
@@ -132,17 +132,17 @@ extension ControllersTests {
             #expect(statusHistory.hashtags.contains(where: { $0.hashtag == "football" }) == true, "Hashtag should be saved in history status.")
             #expect(statusHistory.mentions.contains(where: { $0.userName == "adam@localhost.com" }) == true, "Mention should be saved in history status.")
         }
-        
+
         @Test("Status should not be updated for unauthorized user")
         func statusShouldNotBeUpdatedForUnauthorizedUser() async throws {
-            
+
             // Arrange.
             let user = try await application.createUser(userName: "chrisurlich")
             let attachment = try await application.createAttachment(user: user)
             defer {
                 application.clearFiles(attachments: [attachment])
             }
-            
+
             let statusRequestDto = StatusRequestDto(note: "This is note...",
                                                     visibility: .followers,
                                                     sensitive: false,
@@ -150,35 +150,35 @@ extension ControllersTests {
                                                     commentsDisabled: false,
                                                     replyToStatusId: nil,
                                                     attachmentIds: [attachment.stringId()!])
-            
+
             // Act.
             let response = try await application.getErrorResponse(
                 to: "/statuses/1",
                 method: .PUT,
                 data: statusRequestDto
             )
-            
+
             // Assert.
             #expect(response.status == HTTPResponseStatus.unauthorized, "Response http status code should be unauthorized (401).")
         }
-        
+
         @Test("Status should not be updated when status created by someone else")
         func statusShouldNotBeUpdatedWhenStatusCreatedBySomeoneElse() async throws {
-            
+
             // Arrange.
             let user1 = try await application.createUser(userName: "carolineurlich")
             let user2 = try await application.createUser(userName: "olaurlich")
-            
+
             let (statuses, attachments) = try await application.createStatuses(user: user1,
                                                                                notePrefix: "Test note",
                                                                                amount: 1)
-            
+
             let attachment = try await application.createAttachment(user: user2)
             defer {
                 application.clearFiles(attachments: attachments)
                 application.clearFiles(attachments: [attachment])
             }
-            
+
             let statusRequestDto = StatusRequestDto(note: "This is note...",
                                                     visibility: .followers,
                                                     sensitive: false,
@@ -186,7 +186,7 @@ extension ControllersTests {
                                                     commentsDisabled: false,
                                                     replyToStatusId: nil,
                                                     attachmentIds: [attachment.stringId()!])
-            
+
             // Act.
             let response = try await application.getErrorResponse(
                 as: .user(userName: "olaurlich", password: "p@ssword"),
@@ -194,28 +194,28 @@ extension ControllersTests {
                 method: .PUT,
                 data: statusRequestDto
             )
-            
+
             // Assert.
             #expect(response.status == HTTPResponseStatus.forbidden, "Response http status code should be forbidden (403).")
         }
-        
+
         @Test("Status should not be updated for attachments created by someone else")
         func statusShouldNotBeUpdatedForAttachmentsCreatedBySomeoneElse() async throws {
-            
+
             // Arrange.
             let user1 = try await application.createUser(userName: "trendurlich")
             let user2 = try await application.createUser(userName: "ronaldurlich")
-            
+
             let (statuses, attachments) = try await application.createStatuses(user: user1,
                                                                                notePrefix: "Test note",
                                                                                amount: 1)
-            
+
             let attachment = try await application.createAttachment(user: user2)
             defer {
                 application.clearFiles(attachments: attachments)
                 application.clearFiles(attachments: [attachment])
             }
-            
+
             let statusRequestDto = StatusRequestDto(note: "This is note...",
                                                     visibility: .followers,
                                                     sensitive: false,
@@ -223,7 +223,7 @@ extension ControllersTests {
                                                     commentsDisabled: false,
                                                     replyToStatusId: nil,
                                                     attachmentIds: [attachment.stringId()!])
-            
+
             // Act.
             let response = try await application.getErrorResponse(
                 as: .user(userName: "trendurlich", password: "p@ssword"),
@@ -231,7 +231,7 @@ extension ControllersTests {
                 method: .PUT,
                 data: statusRequestDto
             )
-            
+
             // Assert.
             #expect(response.status == HTTPResponseStatus.notFound, "Response http status code should be not found (404).")
         }

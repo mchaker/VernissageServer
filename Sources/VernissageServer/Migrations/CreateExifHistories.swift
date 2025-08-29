@@ -38,7 +38,7 @@ extension ExifHistory {
                 .field("updatedAt", .datetime)
                 .field("deletedAt", .datetime)
                 .create()
-            
+
             if let sqlDatabase = database as? SQLDatabase {
                 try await sqlDatabase
                     .create(index: "\(ExifHistory.schema)_attachmentHistoryIdIndex")
@@ -47,7 +47,7 @@ extension ExifHistory {
                     .run()
             }
         }
-        
+
         func revert(on database: Database) async throws {
             try await database.schema(ExifHistory.schema).delete()
         }
