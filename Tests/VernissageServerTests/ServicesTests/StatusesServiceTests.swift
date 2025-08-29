@@ -287,7 +287,9 @@ struct StatusesServiceTests {
                                                    width: 1706,
                                                    height: 882,
                                                    hdrImageUrl: nil,
-                                                   exif: MediaExifDto(make: "Sony",
+                                                   exif: MediaExifDto(parameters: "1girl",
+                                                                      workflow: "test",
+                                                                      make: "Sony",
                                                                       model: "A7IV",
                                                                       lens: "Sigma",
                                                                       createDate: "2025-01-10T10:10:01Z",
@@ -324,6 +326,8 @@ struct StatusesServiceTests {
         #expect(statusAfterUpdate.attachments.first?.description == "This is name", "Description of new attachment should be saved in updated status.")
         #expect(statusAfterUpdate.attachments.first?.originalFile.width == 1706, "Width of new attachment should be saved in updated status.")
         #expect(statusAfterUpdate.attachments.first?.originalFile.height == 882, "Height of new attachment should be saved in updated status.")
+        #expect(statusAfterUpdate.attachments.first?.exif?.parameters == "1giel", "Exif make of new attachment should be saved in updated status.")
+        #expect(statusAfterUpdate.attachments.first?.exif?.workflow == "test", "Exif make of new attachment should be saved in updated status.")
         #expect(statusAfterUpdate.attachments.first?.exif?.make == "Sony", "Exif make of new attachment should be saved in updated status.")
         #expect(statusAfterUpdate.attachments.first?.exif?.model == "A7IV", "Exif make of new attachment should be saved in updated status.")
         #expect(statusAfterUpdate.attachments.first?.exif?.lens == "Sigma", "Exif make of new attachment should be saved in updated status.")

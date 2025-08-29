@@ -41,6 +41,8 @@ extension ControllersTests {
                                                                 previewUrl: "",
                                                                 description: "This is description...",
                                                                 blurhash: "BLURHASH",
+                                                                parameters: "1girl",
+                                                                workflow: "test",
                                                                 make: "Sony",
                                                                 model: "A7IV",
                                                                 lens: "Viltrox 85",

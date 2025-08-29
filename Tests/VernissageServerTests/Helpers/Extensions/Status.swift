@@ -70,6 +70,7 @@ extension Application {
         let attachment = try await self.createAttachment(user: user,
                                                          description: "This is name",
                                                          blurhash: "LEHV6nWB2yk8pyo0adR*.7kCMdnj",
+                                                         workflow: "test",
                                                          make: "Sony",
                                                          model: "A7IV",
                                                          lens: "Sigma",

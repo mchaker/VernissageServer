@@ -14,7 +14,13 @@ final class ExifHistory: Model, @unchecked Sendable {
 
     @ID(custom: .id, generatedBy: .user)
     var id: Int64?
-    
+
+    @Field(key: "parameters")
+    var parameters: String?
+
+    @Field(key: "workflow")
+    var workflow: String?
+
     @Field(key: "make")
     var make: String?
     
@@ -80,6 +86,8 @@ final class ExifHistory: Model, @unchecked Sendable {
         self.id = id
         self.$attachmentHistory.id = attachmentHistoryId
 
+        self.parameters = exif.parameters
+        self.workflow = exif.workflow
         self.make = exif.make
         self.model = exif.model
         self.lens = exif.lens
@@ -106,6 +114,8 @@ extension MediaExifDto {
         }
         
         self.init(
+            parameters: exif.parameters,
+            workflow: exif.workflow,
             make: exif.make,
             model: exif.model,
             lens: exif.lens,

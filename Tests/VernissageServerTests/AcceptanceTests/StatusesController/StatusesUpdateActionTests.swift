@@ -36,6 +36,8 @@ extension ControllersTests {
             let attachment = try await application.createAttachment(user: user,
                                                                     description: "This is name",
                                                                     blurhash: "LEHV6nWB2yk8pyo0adR*.7kCMdnj",
+                                                                    parameters: "1girl",
+                                                                    workflow: "test",
                                                                     make: "Sony",
                                                                     model: "A7IV",
                                                                     lens: "Sigma",

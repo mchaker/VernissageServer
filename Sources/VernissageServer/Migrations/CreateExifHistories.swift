@@ -15,6 +15,8 @@ extension ExifHistory {
             try await database
                 .schema(ExifHistory.schema)
                 .field(.id, .int64, .identifier(auto: false))
+                .field("parameters", .varchar(10240))
+                .field("workflow", .varchar(65536))
                 .field("make", .varchar(100))
                 .field("model", .varchar(100))
                 .field("lens", .varchar(100))
