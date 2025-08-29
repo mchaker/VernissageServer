@@ -244,6 +244,7 @@ extension Exif {
             try await database
                 .schema(Exif.schema)
                 .updateField("workflow", .varchar(65536))
+                .update()
 
             try await database
                 .schema(Exif.schema)
