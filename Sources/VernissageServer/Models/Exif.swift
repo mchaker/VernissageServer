@@ -96,7 +96,7 @@ final class Exif: Model, @unchecked Sendable {
                       longitude: String? = nil,
                       flash: String? = nil,
                       focalLength: String? = nil) {
-        if parameters == nil && workflow == nil && if make == nil && model == nil && lens == nil && createDate == nil
+        if parameters == nil && workflow == nil && make == nil && model == nil && lens == nil && createDate == nil
             && focalLenIn35mmFilm == nil && fNumber == nil && exposureTime == nil
             && photographicSensitivity == nil && film == nil && latitude == nil && longitude == nil
             && flash == nil && focalLength == nil {
