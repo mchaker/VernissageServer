@@ -428,6 +428,8 @@ extension Application {
         self.migrations.add(UserRole.CreateForeignIndexes())
         self.migrations.add(UserStatus.CreateForeignIndexes())
 
+        self.migrations.add(User.AddIsSupporterField())
+
         try await self.autoMigrate()
     }
 
