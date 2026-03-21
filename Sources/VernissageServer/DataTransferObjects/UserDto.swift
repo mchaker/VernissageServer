@@ -18,6 +18,7 @@ struct UserDto: Codable {
     var email: String?
     var name: String?
     var bio: String?
+    var reason: String?
     var avatarUrl: String?
     var headerUrl: String?
     var photosCount: Int
@@ -36,6 +37,8 @@ struct UserDto: Codable {
     var roles: [String]?
     var twoFactorEnabled: Bool?
     var manuallyApprovesFollowers: Bool?
+    var includePublicPostsInSearchEngines: Bool?
+    var includeProfilePageInSearchEngines: Bool?
     var featured: Bool?
     var isSupporter: Bool?
     var isSupporterFlagEnabled: Bool?
@@ -52,6 +55,7 @@ struct UserDto: Codable {
         case email
         case name
         case bio
+        case reason
         case avatarUrl
         case headerUrl
         case photosCount
@@ -70,6 +74,8 @@ struct UserDto: Codable {
         case roles
         case twoFactorEnabled
         case manuallyApprovesFollowers
+        case includePublicPostsInSearchEngines
+        case includeProfilePageInSearchEngines
         case featured
         case isSupporter
         case isSupporterFlagEnabled
@@ -85,6 +91,7 @@ struct UserDto: Codable {
          account: String,
          name: String? = nil,
          bio: String? = nil,
+         reason: String? = nil,
          avatarUrl: String? = nil,
          headerUrl: String? = nil,
          photosCount: Int,
@@ -93,6 +100,8 @@ struct UserDto: Codable {
          followingCount: Int,
          twoFactorEnabled: Bool? = nil,
          manuallyApprovesFollowers: Bool? = nil,
+         includePublicPostsInSearchEngines: Bool? = nil,
+         includeProfilePageInSearchEngines: Bool? = nil,
          activityPubProfile: String = "",
          fields: [FlexiFieldDto]? = nil,
          roles: [String]? = nil,
@@ -114,6 +123,7 @@ struct UserDto: Codable {
         self.account = account
         self.name = name
         self.bio = bio
+        self.reason = reason
         self.avatarUrl = avatarUrl
         self.headerUrl = headerUrl
         self.photosCount = photosCount
@@ -130,6 +140,8 @@ struct UserDto: Codable {
         self.roles = roles
         
         self.manuallyApprovesFollowers = manuallyApprovesFollowers
+        self.includePublicPostsInSearchEngines = includePublicPostsInSearchEngines
+        self.includeProfilePageInSearchEngines = includeProfilePageInSearchEngines
         self.twoFactorEnabled = twoFactorEnabled
         self.email = nil
         self.emailWasConfirmed = nil
@@ -153,6 +165,7 @@ struct UserDto: Codable {
         email = try values.decodeIfPresent(String.self, forKey: .email)
         name = try values.decodeIfPresent(String.self, forKey: .name)
         bio = try values.decodeIfPresent(String.self, forKey: .bio)
+        reason = try values.decodeIfPresent(String.self, forKey: .reason)
         avatarUrl = try values.decodeIfPresent(String.self, forKey: .avatarUrl)
         headerUrl = try values.decodeIfPresent(String.self, forKey: .headerUrl)
         photosCount = try values.decodeIfPresent(Int.self, forKey: .photosCount) ?? 0
@@ -170,6 +183,8 @@ struct UserDto: Codable {
         roles = try values.decodeIfPresent([String].self, forKey: .roles)
         twoFactorEnabled = try values.decodeIfPresent(Bool.self, forKey: .twoFactorEnabled) ?? false
         manuallyApprovesFollowers = try values.decodeIfPresent(Bool.self, forKey: .manuallyApprovesFollowers) ?? false
+        includePublicPostsInSearchEngines = try values.decodeIfPresent(Bool.self, forKey: .includePublicPostsInSearchEngines) ?? false
+        includeProfilePageInSearchEngines = try values.decodeIfPresent(Bool.self, forKey: .includeProfilePageInSearchEngines) ?? false
         featured = try values.decodeIfPresent(Bool.self, forKey: .featured) ?? false
         isSupporter = try values.decodeIfPresent(Bool.self, forKey: .isSupporter) ?? false
         isSupporterFlagEnabled = try values.decodeIfPresent(Bool.self, forKey: .isSupporterFlagEnabled) ?? false
@@ -188,6 +203,7 @@ struct UserDto: Codable {
         try container.encodeIfPresent(email, forKey: .email)
         try container.encodeIfPresent(name, forKey: .name)
         try container.encodeIfPresent(bio, forKey: .bio)
+        try container.encodeIfPresent(reason, forKey: .reason)
         try container.encodeIfPresent(avatarUrl, forKey: .avatarUrl)
         try container.encodeIfPresent(headerUrl, forKey: .headerUrl)
         try container.encodeIfPresent(photosCount, forKey: .photosCount)
@@ -206,6 +222,8 @@ struct UserDto: Codable {
         try container.encodeIfPresent(roles, forKey: .roles)
         try container.encodeIfPresent(twoFactorEnabled, forKey: .twoFactorEnabled)
         try container.encodeIfPresent(manuallyApprovesFollowers, forKey: .manuallyApprovesFollowers)
+        try container.encodeIfPresent(includePublicPostsInSearchEngines, forKey: .includePublicPostsInSearchEngines)
+        try container.encodeIfPresent(includeProfilePageInSearchEngines, forKey: .includeProfilePageInSearchEngines)
         try container.encodeIfPresent(featured, forKey: .featured)
         try container.encodeIfPresent(isSupporter, forKey: .isSupporter)
         try container.encodeIfPresent(isSupporterFlagEnabled, forKey: .isSupporterFlagEnabled)
@@ -237,6 +255,8 @@ extension UserDto {
             statusesCount: user.statusesCount,
             followersCount: user.followersCount,
             followingCount: user.followingCount,
+            includePublicPostsInSearchEngines: user.includePublicPostsInSearchEngines,
+            includeProfilePageInSearchEngines: user.includeProfilePageInSearchEngines,
             activityPubProfile: user.activityPubProfile,
             fields: flexiFields?.map({ FlexiFieldDto(from: $0, baseAddress: baseAddress, isLocalUser: user.isLocal) }),
             roles: roles?.map({ $0.code }),

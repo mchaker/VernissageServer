@@ -675,6 +675,54 @@ struct ActivityDtoDeserialization {
 }
 """
     
+    private let personCase10 =
+"""
+{
+    "@context": [
+        "https://www.w3.org/ns/activitystreams",
+        "https://w3id.org/security/v1"
+    ],
+    "id": "https://example.com/author/johndoe/",
+    "type": "Person",
+    "preferredUsername": "johndoe",
+    "name": "John Doe",
+    "inbox": "https://example.com/wp-json/activitypub/1.0/users/1/inbox",
+    "outbox": "https://example.com/wp-json/activitypub/1.0/users/1/outbox",
+    "url": "https://example.com/author/johndoe/",
+    "endpoints": {
+        "sharedInbox": "https://example.com/wp-json/activitypub/1.0/inbox"
+    },
+    "publicKey": {
+        "id": "https://example.com/author/johndoe/#main-key",
+        "owner": "https://example.com/author/johndoe/",
+        "publicKeyPem": "-----BEGIN PUBLIC KEY-----AAAAA-----END PUBLIC KEY-----"
+    },
+    "attachment": [
+        {
+            "type": "PropertyValue",
+            "name": "Blog",
+            "value": "<a href=\\"https://example.com/\\">example.com</a>"
+        },
+        {
+            "type": "Link",
+            "name": "Blog",
+            "href": "https://example.com/",
+            "rel": ["me", "noopener"]
+        },
+        {
+            "type": "PropertyValue",
+            "name": "GitHub",
+            "value": "<a href=\\"https://github.com/johndoe\\">github.com/johndoe</a>"
+        },
+        {
+            "type": "Link",
+            "name": "GitHub",
+            "href": "https://github.com/johndoe"
+        }
+    ]
+}
+"""
+
     let statusCase07 = """
 {
   "@context": [
@@ -764,6 +812,224 @@ struct ActivityDtoDeserialization {
 }
 """
     
+    let statusCase08 = """
+{
+  "@context": [
+    "https://www.w3.org/ns/activitystreams",
+    "https://purl.archive.org/miscellany"
+  ],
+  "attachment": [
+    {
+      "name": "A semaphore signal at Park South near Barrow-in-Furness.",
+      "type": "Image",
+      "url": "https://enoki.us-east.host.bsky.network/xrpc/com.atproto.sync.getBlob?did=did:plc:25pjv3klpvtyfupgodearyop&cid=bafkreie32hoe5ugeo3oj7g2vkyz74rgxq5s5yjq2fs7g62nnko33sllwcu"
+    }
+  ],
+  "attributedTo": "https://bsky.brid.gy/ap/did:plc:25pjv3klpvtyfupgodearyop",
+  "content": "<p>Semaphore at Park South. 20 December 2025. <a class=\\"hashtag\\" rel=\\"tag\\" href=\\"https://bsky.app/search?q=%23railway\\">#railway</a> <a class=\\"hashtag\\" rel=\\"tag\\" href=\\"https://bsky.app/search?q=%23photography\\">#photography</a></p>",
+  "contentMap": {
+    "en": "<p>Semaphore at Park South. 20 December 2025. <a class=\\"hashtag\\" rel=\\"tag\\" href=\\"https://bsky.app/search?q=%23railway\\">#railway</a> <a class=\\"hashtag\\" rel=\\"tag\\" href=\\"https://bsky.app/search?q=%23photography\\">#photography</a></p>"
+  },
+  "id": "https://bsky.brid.gy/convert/ap/at://did:plc:25pjv3klpvtyfupgodearyop/app.bsky.feed.post/3mhfimrpn5s2b",
+  "image": {
+    "name": "A semaphore signal at Park South near Barrow-in-Furness.",
+    "type": "Image",
+    "url": "https://enoki.us-east.host.bsky.network/xrpc/com.atproto.sync.getBlob?did=did:plc:25pjv3klpvtyfupgodearyop&cid=bafkreie32hoe5ugeo3oj7g2vkyz74rgxq5s5yjq2fs7g62nnko33sllwcu"
+  },
+  "published": "2026-03-19T07:37:53.911Z",
+  "tag": [
+    {
+      "href": "https://bsky.app/search?q=%23railway",
+      "name": "#railway",
+      "type": "Hashtag"
+    },
+    {
+      "href": "https://bsky.app/search?q=%23photography",
+      "name": "#photography",
+      "type": "Hashtag"
+    }
+  ],
+  "to": [
+    "https://www.w3.org/ns/activitystreams#Public"
+  ],
+  "type": "Note",
+  "url": [
+    "https://bsky.brid.gy/r/https://bsky.app/profile/did:plc:25pjv3klpvtyfupgodearyop/post/3mhfimrpn5s2b",
+    {
+      "href": "at://did:plc:25pjv3klpvtyfupgodearyop/app.bsky.feed.post/3mhfimrpn5s2b",
+      "rel": "canonical",
+      "type": "Link"
+    }
+  ]
+}
+"""
+    
+    private let personCase11 =
+"""
+{
+  "@context": [
+    "https://www.w3.org/ns/activitystreams",
+    "https://w3id.org/security/v1"
+  ],
+  "type": "Service",
+  "id": "https://relay.fedi.buzz/tag/52challenge",
+  "name": "#52challenge",
+  "icon": {
+    "type": "Image",
+    "mediaType": "image/jpeg",
+    "url": "https://fedi.buzz/assets/favicon48.png"
+  },
+  "inbox": "https://relay.fedi.buzz/tag/52challenge",
+  "outbox": "https://relay.fedi.buzz/tag/52challenge/outbox",
+  "endpoints": {
+    "sharedInbox": "https://relay.fedi.buzz/instance/relay.fedi.buzz"
+  },
+  "publicKey": {
+    "id": "https://relay.fedi.buzz/tag/52challenge#key",
+    "owner": "https://relay.fedi.buzz/tag/52challenge",
+    "publicKeyPem": "-----BEGIN PUBLIC KEY-----AAAAA-----END PUBLIC KEY-----"
+  },
+  "preferredUsername": "tag-52challenge"
+}
+"""
+    
+    private let personCase12 =
+"""
+{
+  "@context": [
+    "https://www.w3.org/ns/activitystreams",
+    "https://w3id.org/security/v1"
+  ],
+  "id": "https://bsky.brid.gy/ap/did:plc:3ljmtyyjqcjee2kpewgsifvb",
+  "type": "Person",
+  "preferredUsername": "snarfed",
+  "name": "Ryan Barrett",
+  "summary": "<p>Twórca Bridgy. Piszę o decentralizacji.</p>",
+  "url": "https://bsky.app/profile/snarfed.bsky.social",
+  "alsoKnownAs": [
+    "at://did:plc:3ljmtyyjqcjee2kpewgsifvb"
+  ],
+  "inbox": "https://bsky.brid.gy/ap/did:plc:3ljmtyyjqcjee2kpewgsifvb/inbox",
+  "outbox": "https://bsky.brid.gy/ap/did:plc:3ljmtyyjqcjee2kpewgsifvb/outbox",
+  "followers": "https://bsky.brid.gy/ap/did:plc:3ljmtyyjqcjee2kpewgsifvb/followers",
+  "following": "https://bsky.brid.gy/ap/did:plc:3ljmtyyjqcjee2kpewgsifvb/following",
+  "publicKey": {
+    "id": "https://bsky.brid.gy/ap/did:plc:3ljmtyyjqcjee2kpewgsifvb#main-key",
+    "owner": "https://bsky.brid.gy/ap/did:plc:3ljmtyyjqcjee2kpewgsifvb",
+        "publicKeyPem": "-----BEGIN PUBLIC KEY-----AAAAA-----END PUBLIC KEY-----"
+  },
+  "icon": {
+    "type": "Image",
+    "mediaType": "image/jpeg",
+    "url": "https://example.cdn.bskycdn.com/avatar.jpg"
+  },
+  "manuallyApprovesFollowers": false
+}
+"""
+    
+    private let statusCase09 =
+"""
+{
+  "@context": [
+    "https://www.w3.org/ns/activitystreams",
+    "https://purl.archive.org/miscellany",
+    {
+      "_misskey_quote": "https://misskey-hub.net/ns#_misskey_quote"
+    }
+  ],
+  "_misskey_quote": "https://bsky.brid.gy/convert/ap/at://did:plc:hf7ezrajxadu7v3tzcyij424/app.bsky.feed.post/3mhg4guilx225",
+  "attributedTo": "https://bsky.brid.gy/ap/did:plc:hf7ezrajxadu7v3tzcyij424",
+  "content": "<p>Like.. come tf on, you cannot seriously argue that</p>",
+  "contentMap": {
+    "en": "<p>Like... come tf on, you cannot seriously argue that</p>"
+  },
+  "id": "https://bsky.brid.gy/convert/ap/at://did:plc:hf7ezrajxadu7v3tzcyij424/app.bsky.feed.post/3mhg4lxsz2s25",
+  "inReplyTo": {
+    "id": "https://bsky.brid.gy/convert/ap/at://did:plc:hf7ezrajxadu7v3tzcyij424/app.bsky.feed.post/3mhg4guilx225",
+    "url": "https://bsky.app/profile/did:plc:hf7ezrajxadu7v3tzcyij424/post/3mhg4guilx225"
+  },
+  "published": "2026-03-19T13:35:21.598Z",
+  "quoteUrl": "https://bsky.brid.gy/convert/ap/at://did:plc:hf7ezrajxadu7v3tzcyij424/app.bsky.feed.post/3mhg4guilx225",
+  "tag": [
+    {
+      "name": "bsky.app/profile/park...",
+      "type": "Article",
+      "url": "https://bsky.app/profile/parkermolloy.com/post/3mhg4guilx225"
+    },
+    {
+      "href": "https://bsky.brid.gy/convert/ap/at://did:plc:hf7ezrajxadu7v3tzcyij424/app.bsky.feed.post/3mhg4guilx225",
+      "mediaType": "application/ld+json; profile=\\"https://www.w3.org/ns/activitystreams\\"",
+      "name": "RE: https://bsky.app/profile/did:plc:hf7ezrajxadu7v3tzcyij424/post/3mhg4guilx225",
+      "type": "Link"
+    }
+  ],
+  "to": [
+    "https://www.w3.org/ns/activitystreams#Public"
+  ],
+  "type": "Note",
+  "url": [
+    "https://bsky.brid.gy/r/https://bsky.app/profile/did:plc:hf7ezrajxadu7v3tzcyij424/post/3mhg4lxsz2s25",
+    {
+      "href": "at://did:plc:hf7ezrajxadu7v3tzcyij424/app.bsky.feed.post/3mhg4lxsz2s25",
+      "rel": "canonical",
+      "type": "Link"
+    }
+  ]
+}
+"""
+    
+    private let personCase13 =
+"""
+{
+    "@context": [
+        "https://w3id.org/security/v1",
+        "https://www.w3.org/ns/activitystreams"
+    ],
+    "attachment": [
+        {
+            "name": "MASTODON",
+            "type": "PropertyValue",
+            "value": "https://mastodon.social/@johndoe"
+        },
+        {
+            "name": "GITHUB",
+            "type": "PropertyValue",
+            "value": "https://github.com/johndoe"
+        }
+    ],
+    "endpoints": {
+        "sharedInbox": "https://example.com/shared/inbox"
+    },
+    "followers": "https://example.com/actors/johndoe/followers",
+    "following": "https://example.com/actors/johndoe/following",
+    "icon": {
+        "mediaType": "image/jpeg",
+        "type": "Image",
+        "url": "https://s3.eu-central-1.amazonaws.com/instance/039ebf33d1664d5d849574d0e7191354.jpg"
+    },
+    "id": "https://example.com/actors/johndoe",
+    "image": {
+        "mediaType": "image/jpeg",
+        "type": "Image",
+        "url": "https://s3.eu-central-1.amazonaws.com/instance/2ef4a0f69d0e410ba002df2212e2b63c.jpg"
+    },
+    "inbox": "https://example.com/actors/johndoe/inbox",
+    "manuallyApprovesFollowers": false,
+    "name": "John Doe :verified:",
+    "outbox": "https://example.com/actors/johndoe/outbox",
+    "preferredUsername": "johndoe",
+    "publicKey": {
+        "id": "https://example.com/actors/johndoe#main-key",
+        "owner": "https://example.com/actors/johndoe",
+        "publicKeyPem": "-----BEGIN PUBLIC KEY-----AAAAA-----END PUBLIC KEY-----"
+    },
+    "summary": "#iOS/#dotNET developer, #Apple  fanboy, 📷 aspiring photographer",
+    "tag": "https://example.com/tag",
+    "type": "Person",
+    "url": "https://example.com/@johndoe"
+}
+"""
+    
     @Test
     func `JSON with person string should deserialize`() throws {
 
@@ -836,8 +1102,8 @@ struct ActivityDtoDeserialization {
         let personDto = try self.decoder.decode(PersonDto.self, from: personCase06.data(using: .utf8)!)
 
         // Assert.
-        #expect(personDto.tag?.first?.name == ":verified:")
-        #expect(personDto.tag?.first?.type == .emoji)
+        #expect(personDto.tag?.tags().first?.name == ":verified:")
+        #expect(personDto.tag?.tags().first?.type == .emoji)
     }
     
     @Test
@@ -885,6 +1151,51 @@ struct ActivityDtoDeserialization {
 
         // Assert.
         #expect(personDto.manuallyApprovesFollowers == false)
+    }
+
+    @Test
+    func `JSON with mixed PropertyValue and Link attachments should deserialize`() throws {
+
+        // Act.
+        let personDto = try self.decoder.decode(PersonDto.self, from: personCase10.data(using: .utf8)!)
+
+        // Assert.
+        #expect(personDto.attachment?.count == 4)
+
+        #expect(personDto.attachment?[0].type == "PropertyValue")
+        #expect(personDto.attachment?[0].name == "Blog")
+        #expect(personDto.attachment?[0].value != nil)
+
+        #expect(personDto.attachment?[1].type == "Link")
+        #expect(personDto.attachment?[1].name == "Blog")
+        #expect(personDto.attachment?[1].value == nil)
+
+        #expect(personDto.attachment?[2].type == "PropertyValue")
+        #expect(personDto.attachment?[2].name == "GitHub")
+        #expect(personDto.attachment?[2].value != nil)
+
+        #expect(personDto.attachment?[3].type == "Link")
+        #expect(personDto.attachment?[3].name == "GitHub")
+        #expect(personDto.attachment?[3].value == nil)
+    }
+    
+    @Test
+    func `Only flexi fields should be returned from deserialized object by flexiField function`() throws {
+
+        // Act.
+        let personDto = try self.decoder.decode(PersonDto.self, from: personCase10.data(using: .utf8)!)
+
+        // Assert.
+        let flexiFields = personDto.flexiFields()
+        #expect(flexiFields?.count == 2)
+        
+        #expect(flexiFields?[0].type == "PropertyValue")
+        #expect(flexiFields?[0].name == "Blog")
+        #expect(flexiFields?[0].value != nil)
+
+        #expect(flexiFields?[1].type == "PropertyValue")
+        #expect(flexiFields?[1].name == "GitHub")
+        #expect(flexiFields?[1].value != nil)
     }
     
     @Test
@@ -960,6 +1271,61 @@ struct ActivityDtoDeserialization {
         #expect(noteDto.tag?.emojis().first != nil , "Emoji should be deserialized")
         #expect(noteDto.tag?.emojis().first?.name == ":KritischerTreffer:", "Emoji name should be deserialized")
         #expect(noteDto.tag?.emojis().first?.icon?.url == "https://server.social/system/custom_emojis/images/000/007/421/original/350499e0e0477dd7.png", "Emoji url should be deserialized")
+    }
+    
+    @Test
+    func `JSON from bsky.brid.gy should deserialize`() throws {
+        // Act.
+        let noteDto = try self.decoder.decode(NoteDto.self, from: statusCase08.data(using: .utf8)!)
+
+        // Assert.
+        #expect(noteDto.id == "https://bsky.brid.gy/convert/ap/at://did:plc:25pjv3klpvtyfupgodearyop/app.bsky.feed.post/3mhfimrpn5s2b", "Note id should deserialize correctly")
+        #expect(noteDto.url == "https://bsky.brid.gy/r/https://bsky.app/profile/did:plc:25pjv3klpvtyfupgodearyop/post/3mhfimrpn5s2b", "Property 'url' is not valid.")
+    }
+    
+    @Test
+    func `JSON with person but without url string should deserialize`() throws {
+
+        // Act.
+        let personDto = try self.decoder.decode(PersonDto.self, from: personCase11.data(using: .utf8)!)
+
+        // Assert.
+        #expect(personDto.id == "https://relay.fedi.buzz/tag/52challenge" , "Pserson id should deserialize.")
+        #expect(personDto.url == nil, "Url should be nil when it's not exists in the JSON.")
+    }
+    
+    @Test
+    func `JSON with person from bluesky bridge should deserialize`() throws {
+
+        // Act.
+        let personDto = try self.decoder.decode(PersonDto.self, from: personCase12.data(using: .utf8)!)
+
+        // Assert.
+        #expect(personDto.id == "https://bsky.brid.gy/ap/did:plc:3ljmtyyjqcjee2kpewgsifvb" , "Pserson id should deserialize.")
+        #expect(personDto.url?.values().first == "https://bsky.app/profile/snarfed.bsky.social", "Url should be nil when it's not exists in the JSON.")
+    }
+    
+    @Test
+    func `JSON from bsky.brid.gy with complex inReplyTo should deserialize`() throws {
+        // Act.
+        let noteDto = try self.decoder.decode(NoteDto.self, from: statusCase09.data(using: .utf8)!)
+
+        // Assert.
+        #expect(noteDto.id == "https://bsky.brid.gy/convert/ap/at://did:plc:hf7ezrajxadu7v3tzcyij424/app.bsky.feed.post/3mhg4lxsz2s25", "Note id should deserialize correctly")
+        #expect(noteDto.inReplyTo == "https://bsky.brid.gy/convert/ap/at://did:plc:hf7ezrajxadu7v3tzcyij424/app.bsky.feed.post/3mhg4guilx225", "Property 'inReplyTo' is not valid.")
+    }
+    
+    @Test
+    func `JSON with person string and tag as s string should deserialize`() throws {
+
+        // Act.
+        let activityDto = try self.decoder.decode(PersonDto.self, from: personCase13.data(using: .utf8)!)
+
+        // Assert.
+        #expect(
+            activityDto.tag == .single(PersonHashtagDto(type: .unknown, name: "https://example.com/tag")),
+            "Single person name should deserialize correctly"
+        )
     }
 }
 

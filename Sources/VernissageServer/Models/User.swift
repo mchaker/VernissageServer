@@ -93,6 +93,12 @@ final class User: Model, @unchecked Sendable {
     @Field(key: "manuallyApprovesFollowers")
     var manuallyApprovesFollowers: Bool
     
+    @Field(key: "includePublicPostsInSearchEngines")
+    var includePublicPostsInSearchEngines: Bool
+    
+    @Field(key: "includeProfilePageInSearchEngines")
+    var includeProfilePageInSearchEngines: Bool
+    
     @Field(key: "reason")
     var reason: String?
     
@@ -181,7 +187,7 @@ final class User: Model, @unchecked Sendable {
     
     convenience init(id: Int64,
                      type: UserType,
-                     url: String,
+                     url: String?,
                      isLocal: Bool,
                      userName: String,
                      account: String,
@@ -198,6 +204,8 @@ final class User: Model, @unchecked Sendable {
                      privateKey: String? = nil,
                      publicKey: String? = nil,
                      manuallyApprovesFollowers: Bool = false,
+                     includePublicPostsInSearchEngines: Bool = false,
+                     includeProfilePageInSearchEngines: Bool = false,
                      forgotPasswordGuid: String? = nil,
                      forgotPasswordDate: Date? = nil,
                      bio: String? = nil,
@@ -239,6 +247,8 @@ final class User: Model, @unchecked Sendable {
         self.privateKey = privateKey
         self.publicKey = publicKey
         self.manuallyApprovesFollowers = manuallyApprovesFollowers
+        self.includePublicPostsInSearchEngines = includeProfilePageInSearchEngines
+        self.includeProfilePageInSearchEngines = includeProfilePageInSearchEngines
         self.forgotPasswordGuid = forgotPasswordGuid
         self.forgotPasswordDate = forgotPasswordDate
         self.bio = bio

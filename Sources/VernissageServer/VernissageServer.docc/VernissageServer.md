@@ -104,6 +104,7 @@ a secure HTTP signature, and some are only accessible to registered users of a s
 - ``FollowRequestsController``
 - ``HeadersController``
 - ``HealthController``
+- ``HomeCardsController``
 - ``IdentityController``
 - ``InstanceBlockedDomainsController``
 - ``InstanceController``
@@ -130,6 +131,7 @@ a secure HTTP signature, and some are only accessible to registered users of a s
 - ``TimelinesController``
 - ``TrendingController``
 - ``UserAliasesController``
+- ``UserBlockedDomainsController``
 - ``UsersController``
 - ``UserSettingsController``
 - ``WellKnownController``
@@ -188,6 +190,7 @@ The list below contains definitions of the objects used for communication with V
 - ``ForgotPasswordRequestDto``
 - ``HashtagDto``
 - ``HealthDto``
+- ``HomeCardDto``
 - ``InstanceBlockedDomainDto``
 - ``InstanceDto``
 - ``InstanceStatisticsDto``
@@ -206,6 +209,7 @@ The list below contains definitions of the objects used for communication with V
 - ``OAuthAuthenticateCallbackDto``
 - ``OAuthAuthenticateParametersDto``
 - ``OAuthAuthorizePageDto``
+- ``OAuthCodeResponseDto``
 - ``OAuthErrorCodeDto``
 - ``OAuthErrorDto``
 - ``OAuthGrantTypeDto``
@@ -250,6 +254,7 @@ The list below contains definitions of the objects used for communication with V
 - ``TrendingStatusPeriodDto``
 - ``TwoFactorTokenDto``
 - ``UserAliasDto``
+- ``UserBlockedDomainDto``
 - ``UserDto``
 - ``UserMuteRequestDto``
 - ``UserSettingDto``
@@ -272,6 +277,7 @@ The list below contains definitions of the objects used for communication with V
 - ``AuthenticationClientsService``
 - ``AuthenticationDynamicClientsService``
 - ``BusinessCardsService``
+- ``ClearAttachmentsService``
 - ``CryptoService``
 - ``EmailsService``
 - ``ErrorItemsService``
@@ -338,8 +344,10 @@ The list below contains definitions of the objects used for communication with V
 - ``FollowRequestError``
 - ``ForgotPasswordError``
 - ``HeaderError``
+- ``HomeCardError``
 - ``InstanceBlockedDomainError``
 - ``InvitationError``
+- ``LicenseError``
 - ``LocationError``
 - ``LocalizedTerminateError``
 - ``LoginError``
@@ -365,6 +373,7 @@ The list below contains definitions of the objects used for communication with V
 - ``TwoFactorTokenError``
 - ``UserAliasError``
 - ``UserError``
+- ``UserBlockedDomainError``
 - ``UserSettingError``
 - ``XsrfValidationError``
 
@@ -449,6 +458,7 @@ The list below contains definitions of the objects used for communication with V
 - ``FollowingImportItem``
 - ``FollowingImportItemStatus``
 - ``FollowingImportStatus``
+- ``HomeCard``
 - ``InstanceBlockedDomain``
 - ``Invitation``
 - ``ImageOrientation``

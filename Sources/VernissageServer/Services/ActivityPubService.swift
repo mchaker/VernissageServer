@@ -86,6 +86,18 @@ protocol ActivityPubServiceType: Sendable {
     /// - Throws: Throws an error if rejection fails or the activity type is unsupported.
     func reject(activityPubRequest: ActivityPubRequestDto, on context: ExecutionContext) async throws
 
+    /// Determines whether an incoming undo activity should be processed.
+    ///
+    /// Evaluates the undo activity to decide if it should proceed for the given request and context.
+    /// Returns `false` when referenced objects (like users or statuses) are missing, since there is nothing to undo.
+    ///
+    /// - Parameters:
+    ///   - activityPubRequest: The ActivityPub request DTO containing the undo activity.
+    ///   - context: The execution context providing services and database access.
+    /// - Returns: `true` if the undo activity should be processed; otherwise, `false`.
+    /// - Throws: Throws an error if evaluation fails.
+    func should​Process​Undo(activityPubRequest: ActivityPubRequestDto, on context: ExecutionContext) async throws -> Bool
+    
     /// Undoes a previous action specified in the ActivityPub request.
     ///
     /// Handles undoing actions such as unfollow, unannounce (unboost), or unlike.
@@ -183,11 +195,11 @@ protocol ActivityPubServiceType: Sendable {
     /// Checks if the domain of the actor ID is blocked by the local instance.
     ///
     /// - Parameters:
-    ///   - actorId: The ActivityPub actor ID (URL) to check.
+    ///   - activityPubId: The ActivityPub actor/object ID (URL) to check.
     ///   - context: The execution context providing services and database access.
     /// - Returns: Returns `true` if the domain is blocked, otherwise `false`.
     /// - Throws: Throws an error if the check fails.
-    func isDomainBlockedByInstance(actorId: String, on context: ExecutionContext) async throws -> Bool
+    func isDomainBlockedByInstance(activityPubId: String, on context: ExecutionContext) async throws -> Bool
 
     /// Checks if the domain of the actor in the given activity is blocked by the local instance.
     ///
@@ -299,7 +311,7 @@ final class ActivityPubService: ActivityPubServiceType {
                 if noteDto.isComment() == false {
                     
                     // Prevent creating new statuses when status doesn't contains any image.
-                    if noteDto.attachment?.contains(where: { $0.mediaType.starts(with: "image/") }) == false {
+                    guard let attachments = noteDto.attachment, !attachments.isEmpty, attachments.hasSupportedImages() else {
                         context.logger.warning("Status doesn't contain any image media type attachments (activity: \(activity.id)).")
                         continue
                     }
@@ -422,6 +434,82 @@ final class ActivityPubService: ActivityPubServiceType {
                 try await self.reject(targetProfileUrl: targetActorId, activityPubObject: object, on: context)
             }
         }
+    }
+
+    func should​Process​Undo(activityPubRequest: ActivityPubRequestDto, on context: ExecutionContext) async throws -> Bool {
+        let usersService = context.services.usersService
+        let statusesService = context.services.statusesService
+
+        let activity = activityPubRequest.activity
+        let objects = activity.object.objects()
+
+        for object in objects {
+            switch object.type {
+            case .follow:
+                for sourceActorId in activity.actor.actorIds() {
+                    guard let followDto = object.object as? FollowDto,
+                          let followActors = followDto.object?.objects() else {
+                        continue
+                    }
+
+                    guard let _ = try await usersService.get(activityPubProfile: sourceActorId, on: context.db) else {
+                        continue
+                    }
+                    
+                    for followActor in followActors {
+                        guard let _ = try await usersService.get(activityPubProfile: followActor.id, on: context.db) else {
+                            continue
+                        }
+                        
+                        return true
+                    }
+                }
+            case .announce:
+                for sourceActorId in activity.actor.actorIds() {
+                    guard let announceDto = object.object as? AnnouceDto,
+                          let announceObjects = announceDto.object?.objects() else {
+                        continue
+                    }
+
+                    guard let _ = try await usersService.get(activityPubProfile: sourceActorId, on: context.db) else {
+                        continue
+                    }
+                    
+                    for announceObject in announceObjects {
+                        guard let _ = try await statusesService.get(activityPubId: announceObject.id, on: context.db) else {
+                            continue
+                        }
+                        
+                        return true
+                    }
+                }
+            case .like:
+                for sourceActorId in activity.actor.actorIds() {
+                    guard let announceDto = object.object as? LikeDto,
+                          let likeObjects = announceDto.object?.objects() else {
+                        continue
+                    }
+                    
+                    guard let _ = try await usersService.get(activityPubProfile: sourceActorId, on: context.db) else {
+                        continue
+                    }
+                    
+                    for likeObject in likeObjects {
+                        guard let _ = try await statusesService.get(activityPubId: likeObject.id, on: context.db) else {
+                            continue
+                        }
+                        
+                        return true
+                    }
+                }
+            default:
+                context.logger.warning("Undo of '\(object.type?.rawValue ?? "<unknown>")' action is not supported yet",
+                                       metadata: [Constants.requestMetadata: activityPubRequest.bodyValue.loggerMetadata()])
+                return false
+            }
+        }
+        
+        return false
     }
     
     func undo(activityPubRequest: ActivityPubRequestDto, on context: ExecutionContext) async throws {
@@ -583,6 +671,12 @@ final class ActivityPubService: ActivityPubServiceType {
         }
         
         for object in objects {
+            // Check if announced object is from instance blocked domain.
+            if try await self.isDomainBlockedByInstance(activityPubId: object.id, on: context) {
+                context.logger.warning("Boosted status '\(object.id)' has not been downloaded because its domain is blocked by the instance (activity: \(activity.id)).")
+                continue
+            }
+            
             // Create (or get from local database) main status in local database.
             let downloadedStatus = try await self.downloadStatusSuppressingErrors(activityPubId: object.id, on: context)
             guard let downloadedStatus else {
@@ -1084,7 +1178,7 @@ final class ActivityPubService: ActivityPubServiceType {
         do {
             let downloadedStatus = try await self.downloadStatus(activityPubId: activityPubId, on: context)
             return downloadedStatus
-        } catch ActivityPubError.missingAttachments {
+        } catch ActivityPubError.missingSupportedImageAttachments {
             // Consume this kind of error (it’s not a real error - statuses without images are simply not supported).
         } catch StatusError.cannotAddCommentWithoutCommentedStatus {
             // Consume this kind of error (it’s not a real error - we cannot create comment to not exists status).
@@ -1309,10 +1403,10 @@ final class ActivityPubService: ActivityPubServiceType {
         try await usersService.updateFollowCount(for: sourceUser.requireID(), on: context.db)
     }
 
-    public func isDomainBlockedByInstance(actorId: String, on context: ExecutionContext) async throws -> Bool {
+    public func isDomainBlockedByInstance(activityPubId: String, on context: ExecutionContext) async throws -> Bool {
         let instanceBlockedDomainsService = context.services.instanceBlockedDomainsService
         
-        guard let url = URL(string: actorId) else {
+        guard let url = URL(string: activityPubId) else {
             return false
         }
 
@@ -1385,13 +1479,13 @@ final class ActivityPubService: ActivityPubServiceType {
         let noteDto = try await self.downloadRemoteStatus(activityPubId: activityPubId, on: context)
         
         // Verify once again if status not exist in database.
-        if let status = try await statusesService.get(activityPubId: noteDto.url, on: context.db) {
+        if let status = try await statusesService.get(activityPubId: noteDto.id, on: context.db) {
             return status
         }
 
-        if noteDto.attachment?.contains(where: { $0.mediaType.starts(with: "image/") }) == false {
-            context.logger.warning("Object doesn't contain any image media type attachments (status: \(noteDto.id).")
-            throw ActivityPubError.missingAttachments(activityPubId)
+        guard let attachments = noteDto.attachment, !attachments.isEmpty, attachments.hasSupportedImages() else {
+            context.logger.warning("Object doesn't contain any supported image media type attachments (status: \(noteDto.id), media types: '\(noteDto.attachment?.mediaTypes() ?? "")').")
+            throw ActivityPubError.missingSupportedImageAttachments(activityPubId)
         }
         
         // Download user data to local database.

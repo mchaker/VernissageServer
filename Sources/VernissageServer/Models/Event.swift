@@ -120,6 +120,12 @@ enum EventType: String, Codable, CaseIterable {
     case licensesUpdate
     case licensesDelete
     
+    case homeCardsList
+    case homeCardsCachedList
+    case homeCardsCreate
+    case homeCardsUpdate
+    case homeCardsDelete
+    
     case statusesList
     case statusesCreate
     case statusesRead
@@ -176,9 +182,18 @@ enum EventType: String, Codable, CaseIterable {
     case favouritesList
     
     case instanceBlockedDomainsList
+    case instanceBlockedDomainsRead
     case instanceBlockedDomainsCreate
     case instanceBlockedDomainsUpdate
     case instanceBlockedDomainsDelete
+
+    case userBlockedDomainsList
+    case userBlockedDomainsRead
+    case userBlockedDomainsCreate
+    case userBlockedDomainsUpdate
+    case userBlockedDomainsDelete
+    
+    case userMutesList
     
     case pushSubscriptionsList
     case pushSubscriptionsCreate

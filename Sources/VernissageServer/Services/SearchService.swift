@@ -120,20 +120,21 @@ final class SearchService: SearchServiceType {
         let profileImageFileName = await self.downloadHeaderImage(personProfile: personProfile, on: context)
         
         // Update profile in internal database and return it.
-        let user = await self.update(personProfile: personProfile,
-                                     profileIconFileName: profileIconFileName,
-                                     profileImageFileName: profileImageFileName,
-                                     on: context)
+        guard let user = await self.update(personProfile: personProfile,
+                                           profileIconFileName: profileIconFileName,
+                                           profileImageFileName: profileImageFileName,
+                                           on: context) else {
+            // When we cannot update new user profile into database we have to return existing user data.
+            return userFromDatabase
+        }
         
-        if let user {
-            // Downlaod updated flexi fields.
-            let flexiFieldService = context.services.flexiFieldService
-            let flexiFields = try? await flexiFieldService.getFlexiFields(for: user.requireID(), on: context.db)
-            
-            // Enqueue job for flexi field URL validator.
-            if let flexiFields {
-                try? await flexiFieldService.dispatchUrlValidator(flexiFields: flexiFields, on: context)
-            }
+        // Downlaod updated flexi fields.
+        let flexiFieldService = context.services.flexiFieldService
+        let flexiFields = try? await flexiFieldService.getFlexiFields(for: user.requireID(), on: context.db)
+        
+        // Enqueue job for flexi field URL validator.
+        if let flexiFields {
+            try? await flexiFieldService.dispatchUrlValidator(flexiFields: flexiFields, on: context)
         }
         
         return user
@@ -476,7 +477,7 @@ final class SearchService: SearchServiceType {
                 return newUser
             }
         } catch {
-            context.logger.warning("Error during creating/updating remote user: '\(personProfile.id)' in local database: '\(error.localizedDescription)'.")
+            context.logger.error("Error during creating/updating remote user: '\(personProfile.id)' in local database: '\(error.localizedDescription)', error: \(error).")
             return nil
         }
     }
@@ -507,8 +508,8 @@ final class SearchService: SearchServiceType {
     private func getActivityPubProfileLink(query: String, baseUrl: URL) async throws -> URL? {
         let activityPubClient = ActivityPubClient()
 
-        // First we have to download host meta where we have URL to webfinger.
-        let hostMetaContent = try await activityPubClient.hostMeta(baseUrl: baseUrl)
+        // First we have to download host meta where we have URL to webfinger (when error occurs, like 404 we can assume default webfinger url).
+        let hostMetaContent = try? await activityPubClient.hostMeta(baseUrl: baseUrl)
 
         // Get url from returned XML or default one.
         var urlFromHostMeta = self.getWebfingerLink(from: hostMetaContent)
@@ -521,7 +522,7 @@ final class SearchService: SearchServiceType {
         }
         
         // Search query shouldn't contains first (at) sign, e.g. johndoe@server.pl.
-        let searchQuery = query.trimmingPrefix("@")
+        let searchQuery = "acct:" + query.trimmingPrefix("@")
         
         // Replace {uri} with `searchQuery`.
         let urlString = urlFromHostMeta

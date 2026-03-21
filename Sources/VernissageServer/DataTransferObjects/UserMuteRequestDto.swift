@@ -11,6 +11,8 @@ struct UserMuteRequestDto {
     var muteReblogs: Bool
     var muteNotifications: Bool
     var muteEnd: Date?
+    var removeStatusesFromTimeline: Bool?
+    var removeReblogsFromTimeline: Bool?
 }
 
 extension UserMuteRequestDto: Content { }
