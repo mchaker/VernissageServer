@@ -95,6 +95,8 @@ extension ControllersTests {
             #expect(updatedAttachment.stringId() == temporaryAttachmentDto.id, "Attachment id should be correct.")
             #expect(updatedAttachment.description == temporaryAttachmentDto.description, "Attachment description should be correct.")
             #expect(updatedAttachment.blurhash == temporaryAttachmentDto.blurhash, "Attachment blurhash should be correct.")
+            #expect(attachmentExif.parameters == temporaryAttachmentDto.parameters, "Attachment parameters should be correct.")
+            #expect(attachmentExif.workflow == temporaryAttachmentDto.workflow, "Attachment workflow should be correct.")
             #expect(attachmentExif.make == temporaryAttachmentDto.make, "Attachment make should be correct.")
             #expect(attachmentExif.model == temporaryAttachmentDto.model, "Attachment model privileges should be correct.")
             #expect(attachmentExif.lens == temporaryAttachmentDto.lens, "Attachment lens should be correct.")
