@@ -15,8 +15,6 @@ extension Exif {
             try await database
                 .schema(Exif.schema)
                 .field(.id, .int64, .identifier(auto: false))
-                .field("parameters", .varchar(10240))
-                .field("workflow", .varchar(65536))
                 .field("make", .varchar(50))
                 .field("model", .varchar(50))
                 .field("lens", .varchar(50))

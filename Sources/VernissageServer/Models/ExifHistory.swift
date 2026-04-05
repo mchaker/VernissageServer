@@ -96,7 +96,10 @@ final class ExifHistory: Model, @unchecked Sendable {
         self.fNumber = exif.fNumber
         self.exposureTime = exif.exposureTime
         self.photographicSensitivity = exif.photographicSensitivity
+        self.software = exif.software
         self.film = exif.film
+        self.chemistry = exif.chemistry
+        self.scanner = exif.scanner
         self.latitude = exif.latitude
         self.longitude = exif.longitude
         self.flash = exif.flash
