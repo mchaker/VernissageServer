@@ -139,6 +139,18 @@ VERNISSAGE_BASEADDRESS=https://vernissage.example.com
 # if omited Vernissage creates a local sqlite database (not recommended)
 VERNISSAGE_CONNECTIONSTRING=postgres://vernissage-user:P4s5w0rdXaXi93EJF1XaBH8b7yhLQMm7nBzfozh@host:5432/vernissage-db
 
+# max connections per event loop in Fluent Postgres pool
+# default: 1
+VERNISSAGE_DBMAXCONNECTIONSPEREVENTLOOP=1
+
+# max time (seconds) to wait for free connection in pool
+# default: 10
+VERNISSAGE_DBCONNECTIONPOOLTIMEOUTSECONDS=10
+
+# max time (seconds) to open new TCP connection to PostgreSQL
+# default: 10
+VERNISSAGE_DBCONNECTTIMEOUTSECONDS=10
+
 # api url to your S3 storage
 # if omited Vernissage uses a local storage directory (not recommended)
 VERNISSAGE_S3ADDRESS=https://minio.example.com
@@ -169,6 +181,9 @@ VERNISSAGE_QUEUEURL=redis://vernissage-redis.internal:6379
 # on your S3 storage. Normaly the same as VERNISSAGE_S3ADDRESS
 VERNISSAGE_CSP_IMG=https://minio.example.com
 
+# domain names to add to the allow list of SSRF protection rules.
+# normaly the same as in VERNISSAGE_BASEADDRESS and VERNISSAGE_S3ADDRESS
+VERNISSAGE_ALLOWED_HOSTS=vernissage.example.com,minio.example.com
 
 ########################################################################
 # PROXY
