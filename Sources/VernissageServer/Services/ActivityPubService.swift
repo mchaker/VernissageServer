@@ -128,6 +128,16 @@ protocol ActivityPubServiceType: Sendable {
     /// - Throws: Throws an error if the announce operation fails.
     func announce(activityPubRequest: ActivityPubRequestDto, on context: ExecutionContext) async throws
 
+    /// Processes a flag activity based on the ActivityPub request.
+    ///
+    /// Handles reports received from remote instances and stores them as non-local reports.
+    ///
+    /// - Parameters:
+    ///   - activityPubRequest: The ActivityPub request DTO containing the flag activity.
+    ///   - context: The execution context providing services and database access.
+    /// - Throws: Throws an error if the report cannot be created.
+    func flag(activityPubRequest: ActivityPubRequestDto, on context: ExecutionContext) async throws
+
     /// Creates and distributes a status based on the given ActivityPub status event.
     ///
     /// Processes the status creation and sends it to remote shared inboxes, handling network communication and activity event lifecycle.
@@ -783,10 +793,110 @@ final class ActivityPubService: ActivityPubServiceType {
         }
     }
     
+    public func flag(activityPubRequest: ActivityPubRequestDto, on context: ExecutionContext) async throws {
+        let activity = activityPubRequest.activity
+        let statusesService = context.services.statusesService
+        
+        let objects = activity.object.objects()
+        let reportedStatus = try await self.reportedLocalStatus(from: objects, on: context)
+        let reportedUser = try await self.reportedLocalUser(from: objects, status: reportedStatus, on: context)
+        
+        guard let reportedUser else {
+            context.logger.warning("Cannot create report from Flag because there is no local reported user or status (activity: \(activity.id)).")
+            return
+        }
+        
+        if let report = try await Report.query(on: context.db)
+            .filter(\.$activityPubId == activity.id)
+            .first() {
+            context.logger.info("Report from ActivityPub Flag already exists (report: \(report.stringId() ?? ""), activity: \(activity.id)).")
+            return
+        }
+        
+        guard let actorActivityPubId = activity.actor.actorIds().first else {
+            context.logger.warning("Cannot find any ActivityPub actor profile id (activity: \(activity.id)).")
+            return
+        }
+        
+        let searchService = context.services.searchService
+        guard let reportingUser = try await searchService.downloadRemoteUser(activityPubProfile: actorActivityPubId, on: context) else {
+            context.logger.warning("Reporting user '\(actorActivityPubId)' cannot be found in the local database (activity: \(activity.id)).")
+            return
+        }
+        
+        let reportedStatusId = try reportedStatus?.requireID()
+        let mainStatus = try await statusesService.getMainStatus(for: reportedStatusId, on: context.db)
+        let reportId = context.services.snowflakeService.generate()
+        
+        let report = Report(id: reportId,
+                            userId: try reportingUser.requireID(),
+                            reportedUserId: try reportedUser.requireID(),
+                            statusId: reportedStatusId,
+                            mainStatusId: mainStatus?.id,
+                            comment: activity.content,
+                            forward: false,
+                            isLocal: false,
+                            activityPubId: activity.id,
+                            category: nil,
+                            ruleIds: nil)
+        
+        try await report.save(on: context.db)
+        try await self.sendAdminReportNotifications(reportedUser: reportedUser, on: context)
+        context.logger.info("Report (id: '\(reportId)') has been created from ActivityPub Flag (activity: \(activity.id)).")
+    }
+    
+    private func reportedLocalStatus(from objects: [ObjectDto], on context: ExecutionContext) async throws -> Status? {
+        let statusesService = context.services.statusesService
+        
+        for object in objects {
+            guard let status = try await statusesService.get(activityPubId: object.id, on: context.db), status.isLocal else {
+                continue
+            }
+            
+            return status
+        }
+        
+        return nil
+    }
+    
+    private func reportedLocalUser(from objects: [ObjectDto], status: Status?, on context: ExecutionContext) async throws -> User? {
+        if let status {
+            return status.user
+        }
+        
+        let usersService = context.services.usersService
+        for object in objects {
+            guard let user = try await usersService.get(activityPubProfile: object.id, on: context.db), user.isLocal else {
+                continue
+            }
+            
+            return user
+        }
+        
+        return nil
+    }
+    
+    private func sendAdminReportNotifications(reportedUser: User, on context: ExecutionContext) async throws {
+        let notificationsService = context.services.notificationsService
+        let usersService = context.services.usersService
+        
+        let moderators = try await usersService.getModerators(on: context.db)
+        for moderator in moderators {
+            try await notificationsService.create(type: .adminReport,
+                                                  to: moderator,
+                                                  by: reportedUser.requireID(),
+                                                  statusId: nil,
+                                                  mainStatusId: nil,
+                                                  on: context)
+        }
+    }
+    
     public func create(statusActivityPubEvent: StatusActivityPubEvent, on context: ExecutionContext) async throws {
         try await statusActivityPubEvent.start(on: context)
 
         let statusesService = context.services.statusesService
+        let suspendedServersService = context.services.suspendedServersService
+
         guard let status = try await statusesService.get(id: statusActivityPubEvent.status.requireID(), on: context.db) else {
             return
         }
@@ -802,6 +912,9 @@ final class ActivityPubService: ActivityPubServiceType {
         } else {
             nil
         }
+        
+        // Download suspended servers list.
+        let suspendedServers = await suspendedServersService.getSnapshot(on: context)
         
         // Prepare note DTO object.
         let noteDto = try await statusesService.note(basedOn: status, replyToStatus: replyToStatus, on: context)
@@ -822,6 +935,13 @@ final class ActivityPubService: ActivityPubServiceType {
                 continue
             }
 
+            let shouldSend = await suspendedServersService.shouldSend(to: sharedInboxUrl.host, basedOn: suspendedServers)
+            guard shouldSend else {
+                try? await eventItem.suspended(on: context)
+                context.logger.warning("Sending create status skipped for suspended host: '\(sharedInboxUrl.host ?? "<unknown>")'.")
+                continue
+            }
+
             // Prepare ActivityPub client.
             context.logger.info("[\(index + 1)/\(eventItemsToProceed.count)] Sending create status: '\(status.stringId() ?? "")' to shared inbox: '\(sharedInboxUrl.absoluteString)'.")
             let activityPubClient = ActivityPubClient(privatePemKey: privateKey, userAgent: Constants.userAgent, host: sharedInboxUrl.host)
@@ -835,15 +955,17 @@ final class ActivityPubService: ActivityPubServiceType {
                 
                 // Mark event item as finished successfully.
                 try? await eventItem.success(on: context)
+                try? await suspendedServersService.registerSuccess(for: sharedInboxUrl.host, on: context)
             } catch {
                 // Mark event item as finished with error.
                 try? await eventItem.error("\(error)", on: context)
+                try? await suspendedServersService.registerConnectionError(for: sharedInboxUrl.host, error: error, on: context)
                 context.logger.warning("Sending create status to shared inbox error. Shared inbox url: \(sharedInboxUrl). Error: \(error).")
             }
         }
         
         // Mark event as finished successfully.
-        let hasFailedEvents = statusActivityPubEvent.statusActivityPubEventItems.contains(where: { $0.isSuccess == false })
+        let hasFailedEvents = statusActivityPubEvent.statusActivityPubEventItems.contains(where: { $0.isSuccess == false || $0.isSuspended == true })
         try await statusActivityPubEvent.success(result: hasFailedEvents ? .finishedWithErrors : .finished, on: context)
     }
     
@@ -851,6 +973,8 @@ final class ActivityPubService: ActivityPubServiceType {
         try await statusActivityPubEvent.start(on: context)
 
         let statusesService = context.services.statusesService
+        let suspendedServersService = context.services.suspendedServersService
+
         guard let status = try await statusesService.get(id: statusActivityPubEvent.status.requireID(), on: context.db) else {
             return
         }
@@ -872,6 +996,9 @@ final class ActivityPubService: ActivityPubServiceType {
             nil
         }
         
+        // Download suspended servers list.
+        let suspendedServers = await suspendedServersService.getSnapshot(on: context)
+        
         // Prepare note DTO object.
         let noteDto = try await statusesService.note(basedOn: status, replyToStatus: replyToStatus, on: context)
 
@@ -891,6 +1018,13 @@ final class ActivityPubService: ActivityPubServiceType {
                 continue
             }
 
+            let shouldSend = await suspendedServersService.shouldSend(to: sharedInboxUrl.host, basedOn: suspendedServers)
+            guard shouldSend else {
+                try? await eventItem.suspended(on: context)
+                context.logger.warning("Sending update status skipped for suspended host: '\(sharedInboxUrl.host ?? "<unknown>")'.")
+                continue
+            }
+
             // Prepare ActivityPub client.
             context.logger.info("[\(index + 1)/\(eventItemsToProceed.count)] Sending update status: '\(status.stringId() ?? "")' to shared inbox: '\(sharedInboxUrl.absoluteString)'.")
             let activityPubClient = ActivityPubClient(privatePemKey: privateKey, userAgent: Constants.userAgent, host: sharedInboxUrl.host)
@@ -906,15 +1040,17 @@ final class ActivityPubService: ActivityPubServiceType {
                 
                 // Mark event item as finished successfully.
                 try? await eventItem.success(on: context)
+                try? await suspendedServersService.registerSuccess(for: sharedInboxUrl.host, on: context)
             } catch {
                 // Mark event item as finished with error.
                 try? await eventItem.error("\(error)", on: context)
+                try? await suspendedServersService.registerConnectionError(for: sharedInboxUrl.host, error: error, on: context)
                 context.logger.warning("Sending update status to shared inbox error. Shared inbox url: \(sharedInboxUrl). Error: \(error).")
             }
         }
         
         // Mark event as finished successfully.
-        let hasFailedEvents = statusActivityPubEvent.statusActivityPubEventItems.contains(where: { $0.isSuccess == false })
+        let hasFailedEvents = statusActivityPubEvent.statusActivityPubEventItems.contains(where: { $0.isSuccess == false || $0.isSuspended == true })
         try await statusActivityPubEvent.success(result: hasFailedEvents ? .finishedWithErrors : .finished, on: context)
     }
     
@@ -928,6 +1064,7 @@ final class ActivityPubService: ActivityPubServiceType {
         
         let statusesService = context.services.statusesService
         let usersService = context.services.usersService
+        let suspendedServersService = context.services.suspendedServersService
         
         guard let status = try await statusesService.get(id: statusActivityPubEvent.status.requireID(), on: context.db) else {
             return
@@ -947,6 +1084,9 @@ final class ActivityPubService: ActivityPubServiceType {
             return
         }
         
+        // Download suspended servers list.
+        let suspendedServers = await suspendedServersService.getSnapshot(on: context)
+        
         // Try to send update only to hosts which we didn't sent update yet.
         let eventItemsToProceed = statusActivityPubEvent.statusActivityPubEventItems.filter { $0.isSuccess == nil }
 
@@ -963,6 +1103,13 @@ final class ActivityPubService: ActivityPubServiceType {
                 continue
             }
             
+            let shouldSend = await suspendedServersService.shouldSend(to: sharedInboxUrl.host, basedOn: suspendedServers)
+            guard shouldSend else {
+                try? await eventItem.suspended(on: context)
+                context.logger.warning("Sending favourite skipped for suspended host: '\(sharedInboxUrl.host ?? "<unknown>")'.")
+                continue
+            }
+
             // Prepare ActivityPub client.
             context.logger.info("[\(index + 1)/\(eventItemsToProceed.count)] Sending favourite: '\(statusFavouriteId)' to shared inbox: '\(sharedInboxUrl.absoluteString)'.")
             let activityPubClient = ActivityPubClient(privatePemKey: privateKey, userAgent: Constants.userAgent, host: sharedInboxUrl.host)
@@ -976,15 +1123,17 @@ final class ActivityPubService: ActivityPubServiceType {
                 
                 // Mark event item as finished successfully.
                 try? await eventItem.success(on: context)
+                try? await suspendedServersService.registerSuccess(for: sharedInboxUrl.host, on: context)
             } catch {
                 // Mark event item as finished with error.
                 try? await eventItem.error("\(error)", on: context)
+                try? await suspendedServersService.registerConnectionError(for: sharedInboxUrl.host, error: error, on: context)
                 context.logger.warning("Sending favourite to shared inbox error. Shared inbox url: \(sharedInboxUrl). Error: \(error).")
             }
         }
         
         // Mark event as finished successfully.
-        let hasFailedEvents = statusActivityPubEvent.statusActivityPubEventItems.contains(where: { $0.isSuccess == false })
+        let hasFailedEvents = statusActivityPubEvent.statusActivityPubEventItems.contains(where: { $0.isSuccess == false || $0.isSuspended == true })
         try await statusActivityPubEvent.success(result: hasFailedEvents ? .finishedWithErrors : .finished, on: context)
     }
     
@@ -998,6 +1147,7 @@ final class ActivityPubService: ActivityPubServiceType {
         
         let statusesService = context.services.statusesService
         let usersService = context.services.usersService
+        let suspendedServersService = context.services.suspendedServersService
         
         guard let status = try await statusesService.get(id: statusActivityPubEvent.status.requireID(), on: context.db) else {
             return
@@ -1017,6 +1167,9 @@ final class ActivityPubService: ActivityPubServiceType {
             return
         }
         
+        // Download suspended servers list.
+        let suspendedServers = await suspendedServersService.getSnapshot(on: context)
+        
         // Try to send update only to hosts which we didn't sent update yet.
         let eventItemsToProceed = statusActivityPubEvent.statusActivityPubEventItems.filter { $0.isSuccess == nil }
 
@@ -1033,6 +1186,13 @@ final class ActivityPubService: ActivityPubServiceType {
                 continue
             }
             
+            let shouldSend = await suspendedServersService.shouldSend(to: sharedInboxUrl.host, basedOn: suspendedServers)
+            guard shouldSend else {
+                try? await eventItem.suspended(on: context)
+                context.logger.warning("Sending unfavourite skipped for suspended host: '\(sharedInboxUrl.host ?? "<unknown>")'.")
+                continue
+            }
+
             // Prepare ActivityPub client.
             context.logger.info("[\(index + 1)/\(eventItemsToProceed.count)] Sending unfavourite: '\(statusFavouriteId)' to shared inbox: '\(sharedInboxUrl.absoluteString)'.")
             let activityPubClient = ActivityPubClient(privatePemKey: privateKey, userAgent: Constants.userAgent, host: sharedInboxUrl.host)
@@ -1046,15 +1206,17 @@ final class ActivityPubService: ActivityPubServiceType {
                 
                 // Mark event item as finished successfully.
                 try? await eventItem.success(on: context)
+                try? await suspendedServersService.registerSuccess(for: sharedInboxUrl.host, on: context)
             } catch {
                 // Mark event item as finished with error.
                 try? await eventItem.error("\(error)", on: context)
+                try? await suspendedServersService.registerConnectionError(for: sharedInboxUrl.host, error: error, on: context)
                 context.logger.warning("Sending unfavourite to shared inbox error. Shared inbox url: \(sharedInboxUrl). Error: \(error).")
             }
         }
         
         // Mark event as finished successfully.
-        let hasFailedEvents = statusActivityPubEvent.statusActivityPubEventItems.contains(where: { $0.isSuccess == false })
+        let hasFailedEvents = statusActivityPubEvent.statusActivityPubEventItems.contains(where: { $0.isSuccess == false || $0.isSuspended == true })
         try await statusActivityPubEvent.success(result: hasFailedEvents ? .finishedWithErrors : .finished, on: context)
     }
     
@@ -1067,6 +1229,8 @@ final class ActivityPubService: ActivityPubServiceType {
         }
         
         let statusesService = context.services.statusesService
+        let suspendedServersService = context.services.suspendedServersService
+
         guard let status = try await statusesService.get(id: statusActivityPubEvent.status.requireID(), on: context.db) else {
             return
         }
@@ -1080,6 +1244,9 @@ final class ActivityPubService: ActivityPubServiceType {
             context.logger.warning("\(errorMessage)")
             return
         }
+        
+        // Download suspended servers list.
+        let suspendedServers = await suspendedServersService.getSnapshot(on: context)
         
         // Try to send update only to hosts which we didn't sent update yet.
         let eventItemsToProceed = statusActivityPubEvent.statusActivityPubEventItems.filter { $0.isSuccess == nil }
@@ -1097,6 +1264,13 @@ final class ActivityPubService: ActivityPubServiceType {
                 continue
             }
             
+            let shouldSend = await suspendedServersService.shouldSend(to: sharedInboxUrl.host, basedOn: suspendedServers)
+            guard shouldSend else {
+                try? await eventItem.suspended(on: context)
+                context.logger.warning("Sending announce skipped for suspended host: '\(sharedInboxUrl.host ?? "<unknown>")'.")
+                continue
+            }
+
             // Prepare ActivityPub client.
             context.logger.info("[\(index + 1)/\(eventItemsToProceed.count)] Sending announce: '\(activityPubReblog.activityPubStatusId)' (orginal status id: '\(status.stringId() ?? "")') to shared inbox: '\(sharedInboxUrl.absoluteString)'.")
             let activityPubClient = ActivityPubClient(privatePemKey: privateKey, userAgent: Constants.userAgent, host: sharedInboxUrl.host)
@@ -1112,15 +1286,17 @@ final class ActivityPubService: ActivityPubServiceType {
                 
                 // Mark event item as finished successfully.
                 try? await eventItem.success(on: context)
+                try? await suspendedServersService.registerSuccess(for: sharedInboxUrl.host, on: context)
             } catch {
                 // Mark event item as finished with error.
                 try? await eventItem.error("\(error)", on: context)
+                try? await suspendedServersService.registerConnectionError(for: sharedInboxUrl.host, error: error, on: context)
                 context.logger.warning("Sending announce to shared inbox error. Shared inbox url: \(sharedInboxUrl). Error: \(error).")
             }
         }
         
         // Mark event as finished successfully.
-        let hasFailedEvents = statusActivityPubEvent.statusActivityPubEventItems.contains(where: { $0.isSuccess == false })
+        let hasFailedEvents = statusActivityPubEvent.statusActivityPubEventItems.contains(where: { $0.isSuccess == false || $0.isSuspended == true })
         try await statusActivityPubEvent.success(result: hasFailedEvents ? .finishedWithErrors : .finished, on: context)
     }
     
@@ -1133,6 +1309,8 @@ final class ActivityPubService: ActivityPubServiceType {
         }
         
         let statusesService = context.services.statusesService
+        let suspendedServersService = context.services.suspendedServersService
+
         guard let status = try await statusesService.get(id: statusActivityPubEvent.status.requireID(), on: context.db) else {
             return
         }
@@ -1147,6 +1325,9 @@ final class ActivityPubService: ActivityPubServiceType {
             context.logger.warning("\(errorMessage)")
             return
         }
+        
+        // Download suspended servers list.
+        let suspendedServers = await suspendedServersService.getSnapshot(on: context)
         
         // Try to send update only to hosts which we didn't sent update yet.
         let eventItemsToProceed = statusActivityPubEvent.statusActivityPubEventItems.filter { $0.isSuccess == nil }
@@ -1164,6 +1345,13 @@ final class ActivityPubService: ActivityPubServiceType {
                 continue
             }
             
+            let shouldSend = await suspendedServersService.shouldSend(to: sharedInboxUrl.host, basedOn: suspendedServers)
+            guard shouldSend else {
+                try? await eventItem.suspended(on: context)
+                context.logger.warning("Sending unannounce skipped for suspended host: '\(sharedInboxUrl.host ?? "<unknown>")'.")
+                continue
+            }
+
             // Prepare ActivityPub client.
             context.logger.info("[\(index + 1)/\(eventItemsToProceed.count)] Sending unannounce: '\(activityPubUnreblog.activityPubStatusId)' (orginal status id: '\(status.stringId() ?? "")') to shared inbox: '\(sharedInboxUrl.absoluteString)'.")
             let activityPubClient = ActivityPubClient(privatePemKey: privateKey, userAgent: Constants.userAgent, host: sharedInboxUrl.host)
@@ -1179,15 +1367,17 @@ final class ActivityPubService: ActivityPubServiceType {
                 
                 // Mark event item as finished successfully.
                 try? await eventItem.success(on: context)
+                try? await suspendedServersService.registerSuccess(for: sharedInboxUrl.host, on: context)
             } catch {
                 // Mark event item as finished with error.
                 try? await eventItem.error("\(error)", on: context)
+                try? await suspendedServersService.registerConnectionError(for: sharedInboxUrl.host, error: error, on: context)
                 context.logger.warning("Sending unannounce to shared inbox error. Shared inbox url: \(sharedInboxUrl). Error: \(error).")
             }
         }
         
         // Mark event as finished successfully.
-        let hasFailedEvents = statusActivityPubEvent.statusActivityPubEventItems.contains(where: { $0.isSuccess == false })
+        let hasFailedEvents = statusActivityPubEvent.statusActivityPubEventItems.contains(where: { $0.isSuccess == false || $0.isSuspended == true })
         try await statusActivityPubEvent.success(result: hasFailedEvents ? .finishedWithErrors : .finished, on: context)
     }
     
@@ -1672,4 +1862,3 @@ final class ActivityPubService: ActivityPubServiceType {
         return objects.contains { $0.id.starts(with: "\(baseAddress)/") }
     }
 }
-
