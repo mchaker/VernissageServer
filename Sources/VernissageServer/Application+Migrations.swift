@@ -203,5 +203,11 @@ extension Application {
         self.migrations.add(Report.AddActivityPubId())
         self.migrations.add(SuspendedServer.CreateSuspendedServers())
         self.migrations.add(StatusActivityPubEventItem.AddIsSuspendedField())
+        self.migrations.add(OAuthClientRequest.ChangeStateLength())
+        self.migrations.add(User.AddMovedToField())
+        self.migrations.add(User.AddDeletionAttemptsFields())
+        self.migrations.add(Status.CreatePinnedAt())
+        self.migrations.add(Status.CreatePinnedAtIndex())
+        self.migrations.add(User.AddFeaturedField())
     }
 }

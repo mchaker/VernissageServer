@@ -4,7 +4,7 @@
 //  Licensed under the Apache License 2.0.
 //
 
-public struct PersonDto {
+public struct PersonDto: CommonObjectDto {
     public let context: ComplexType<ContextDto>
     public let id: String
     public let type: String
@@ -17,6 +17,7 @@ public struct PersonDto {
     public let summary: String?
     public let url: ComplexType<String>?
     public let alsoKnownAs: [String]?
+    public let movedTo: String?
     public let manuallyApprovesFollowers: Bool
     public let published: String?
     public let publicKey: PersonPublicKeyDto
@@ -25,6 +26,7 @@ public struct PersonDto {
     public let endpoints: PersonEndpointsDto?
     public let attachment: [PersonAttachmentDto]?
     public let tag: ComplexType<PersonHashtagDto>?
+    public let featured: String?
     
     public init(id: String,
                 following: String,
@@ -36,6 +38,7 @@ public struct PersonDto {
                 summary: String?,
                 url: String,
                 alsoKnownAs: [String]?,
+                movedTo: String?,
                 manuallyApprovesFollowers: Bool,
                 published: String?,
                 publicKey: PersonPublicKeyDto,
@@ -43,7 +46,8 @@ public struct PersonDto {
                 image: PersonImageDto?,
                 endpoints: PersonEndpointsDto,
                 attachment: [PersonAttachmentDto]?,
-                tag: [PersonHashtagDto]?
+                tag: [PersonHashtagDto]?,
+                featured: String?
     ) {
         self.context = ContextDto.createPersonContext()
         self.type = ActorTypeDto.person.rawValue
@@ -57,6 +61,7 @@ public struct PersonDto {
         self.summary = summary
         self.url = .single(url)
         self.alsoKnownAs = alsoKnownAs
+        self.movedTo = movedTo
         self.manuallyApprovesFollowers = manuallyApprovesFollowers
         self.published = published
         self.publicKey = publicKey
@@ -64,6 +69,7 @@ public struct PersonDto {
         self.image = if let image { .single(image) } else { nil }
         self.endpoints = endpoints
         self.attachment = attachment
+        self.featured = featured
         
         if let tag {
             self.tag = .multiple(tag)
@@ -81,7 +87,8 @@ public struct PersonDto {
                 manuallyApprovesFollowers: Bool,
                 published: String?,
                 endpoints: PersonEndpointsDto,
-                publicKey: PersonPublicKeyDto
+                publicKey: PersonPublicKeyDto,
+                featured: String? = nil
     ) {
         self.context = ContextDto.createPersonContext()
         self.type =  ActorTypeDto.application.rawValue
@@ -95,6 +102,7 @@ public struct PersonDto {
         self.summary = nil
         self.url = .single(url)
         self.alsoKnownAs = nil
+        self.movedTo = nil
         self.manuallyApprovesFollowers = manuallyApprovesFollowers
         self.published = published
         self.publicKey = publicKey
@@ -103,6 +111,7 @@ public struct PersonDto {
         self.endpoints = endpoints
         self.attachment = nil
         self.tag = nil
+        self.featured = featured
     }
     
     enum CodingKeys: String, CodingKey {
@@ -125,7 +134,9 @@ public struct PersonDto {
         case endpoints
         case attachment
         case tag
+        case featured
         case alsoKnownAs
+        case movedTo
     }
 }
 
@@ -166,6 +177,7 @@ extension PersonDto: Codable {
         self.summary = try values.decodeIfPresent(String.self, forKey: .summary)
         self.url = try values.decodeIfPresent(ComplexType<String>.self, forKey: .url)
         self.alsoKnownAs = try values.decodeIfPresent([String].self, forKey: .alsoKnownAs)
+        self.movedTo = try values.decodeIfPresent(String.self, forKey: .movedTo)
         self.manuallyApprovesFollowers = try values.decodeIfPresent(Bool.self, forKey: .manuallyApprovesFollowers) ?? false
         self.published = try values.decodeIfPresent(String.self, forKey: .published)
         self.publicKey = try values.decode(PersonPublicKeyDto.self, forKey: .publicKey)
@@ -174,6 +186,7 @@ extension PersonDto: Codable {
         self.endpoints = try values.decodeIfPresent(PersonEndpointsDto.self, forKey: .endpoints)
         self.attachment = try values.decodeIfPresent([PersonAttachmentDto].self, forKey: .attachment)
         self.tag = try values.decodeIfPresent(ComplexType<PersonHashtagDto>.self, forKey: .tag)
+        self.featured = try values.decodeIfPresent(String.self, forKey: .featured)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -189,6 +202,7 @@ extension PersonDto: Codable {
         try container.encodeIfPresent(summary, forKey: .summary)
         try container.encodeIfPresent(url, forKey: .url)
         try container.encodeIfPresent(alsoKnownAs, forKey: .alsoKnownAs)
+        try container.encodeIfPresent(movedTo, forKey: .movedTo)
         try container.encodeIfPresent(manuallyApprovesFollowers, forKey: .manuallyApprovesFollowers)
         try container.encodeIfPresent(published, forKey: .published)
         try container.encodeIfPresent(publicKey, forKey: .publicKey)
@@ -197,6 +211,7 @@ extension PersonDto: Codable {
         try container.encodeIfPresent(endpoints, forKey: .endpoints)
         try container.encodeIfPresent(attachment, forKey: .attachment)
         try container.encodeIfPresent(tag, forKey: .tag)
+        try container.encodeIfPresent(featured, forKey: .featured)
         
         if self.type ==  ActorTypeDto.person.rawValue {
             try container.encodeIfPresent(name, forKey: .name)

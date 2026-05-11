@@ -128,6 +128,20 @@ extension StatusesController: RouteCollection {
             .grouped(EventHandlerMiddleware(.statusesUnbookmark))
             .grouped(CacheControlMiddleware(.noStore))
             .post(":id", "unbookmark", use: unbookmark)
+
+        statusesGroup
+            .grouped(UserPayload.guardMiddleware())
+            .grouped(XsrfTokenValidatorMiddleware())
+            .grouped(EventHandlerMiddleware(.statusesPin))
+            .grouped(CacheControlMiddleware(.noStore))
+            .post(":id", "pin", use: pin)
+
+        statusesGroup
+            .grouped(UserPayload.guardMiddleware())
+            .grouped(XsrfTokenValidatorMiddleware())
+            .grouped(EventHandlerMiddleware(.statusesUnpin))
+            .grouped(CacheControlMiddleware(.noStore))
+            .post(":id", "unpin", use: unpin)
         
         statusesGroup
             .grouped(UserPayload.guardMiddleware())
@@ -430,6 +444,8 @@ struct StatusesController {
     ///
     /// - Throws: `Validation.validationError` if validation errors occurs.
     /// - Throws: `EntityNotFoundError.userNotFound` if user not exists.
+    /// - Throws: `StatusError.emailNotVerified` if user email has not been verified.
+    /// - Throws: `StatusError.accountHasBeenMoved` if account has been migrated.
     /// - Throws: `StatusError.attachmentsAreRequired` if attachments are misssing.
     /// - Throws: `EntityNotFoundError.statusNotFound` if status not exists.
     /// - Throws: `StatusError.incorrectAttachmentId` if incorrect attachment id.
@@ -440,6 +456,14 @@ struct StatusesController {
 
         guard let user = try await User.query(on: request.db).filter(\.$id == authorizationPayloadId).first() else {
             throw EntityNotFoundError.userNotFound
+        }
+
+        guard user.emailWasConfirmed == true else {
+            throw StatusError.emailNotVerified
+        }
+
+        guard user.$movedTo.id == nil else {
+            throw StatusError.accountHasBeenMoved
         }
         
         try StatusRequestDto.validate(content: request)
@@ -2304,6 +2328,129 @@ struct StatusesController {
 
         return await statusesService.convertToDto(status: statusFromDatabaseAfterUnbookmark,
                                                   attachments: statusFromDatabaseAfterUnbookmark.attachments,
+                                                  attachUserInteractions: true,
+                                                  on: request.executionContext)
+    }
+
+    /// Pin specific status on signed in user profile.
+    ///
+    /// This endpoint allows status owner to pin own status on top of profile timeline.
+    ///
+    /// > Important: Endpoint URL: `/api/v1/statuses/:id/pin`.
+    ///
+    /// - Parameters:
+    ///   - request: The Vapor request to the endpoint.
+    ///
+    /// - Returns: Information about pinned status.
+    ///
+    /// - Throws: `StatusError.incorrectStatusId` if status id is incorrect.
+    /// - Throws: `EntityNotFoundError.statusNotFound` if status not exists.
+    /// - Throws: `EntityForbiddenError.statusForbidden` if status does not belong to the signed in user.
+    /// - Throws: `StatusError.cannotPinNonPublicStatus` if status visibility is not public.
+    /// - Throws: `StatusError.cannotPinComment` if status is a comment.
+    /// - Throws: `StatusError.cannotPinReblog` if status is a reblog.
+    @Sendable
+    func pin(request: Request) async throws -> StatusDto {
+        let authorizationPayloadId = try request.requireUserId()
+
+        guard let statusIdString = request.parameters.get("id", as: String.self) else {
+            throw StatusError.incorrectStatusId
+        }
+
+        guard let statusId = statusIdString.toId() else {
+            throw StatusError.incorrectStatusId
+        }
+
+        let statusesService = request.application.services.statusesService
+        guard let status = try await statusesService.get(id: statusId, on: request.db) else {
+            throw EntityNotFoundError.statusNotFound
+        }
+
+        guard status.$user.id == authorizationPayloadId else {
+            throw EntityForbiddenError.statusForbidden
+        }
+
+        guard status.visibility == .public else {
+            throw StatusError.cannotPinNonPublicStatus
+        }
+
+        guard status.$replyToStatus.id == nil else {
+            throw StatusError.cannotPinComment
+        }
+
+        guard status.$reblog.id == nil else {
+            throw StatusError.cannotPinReblog
+        }
+
+        status.pinnedAt = Date()
+        try await status.save(on: request.db)
+
+        if status.isLocal {
+            try await request
+                .queues(.statusPinner)
+                .dispatch(StatusPinnerJob.self, statusId, maxRetryCount: 2)
+        }
+
+        guard let statusFromDatabaseAfterPin = try await statusesService.get(id: statusId, on: request.db) else {
+            throw EntityNotFoundError.statusNotFound
+        }
+
+        return await statusesService.convertToDto(status: statusFromDatabaseAfterPin,
+                                                  attachments: statusFromDatabaseAfterPin.attachments,
+                                                  attachUserInteractions: true,
+                                                  on: request.executionContext)
+    }
+
+    /// Unpin specific status from signed in user profile.
+    ///
+    /// This endpoint allows status owner to unpin own status from profile timeline.
+    ///
+    /// > Important: Endpoint URL: `/api/v1/statuses/:id/unpin`.
+    ///
+    /// - Parameters:
+    ///   - request: The Vapor request to the endpoint.
+    ///
+    /// - Returns: Information about unpinned status.
+    ///
+    /// - Throws: `StatusError.incorrectStatusId` if status id is incorrect.
+    /// - Throws: `EntityNotFoundError.statusNotFound` if status not exists.
+    /// - Throws: `EntityForbiddenError.statusForbidden` if status does not belong to the signed in user.
+    @Sendable
+    func unpin(request: Request) async throws -> StatusDto {
+        let authorizationPayloadId = try request.requireUserId()
+
+        guard let statusIdString = request.parameters.get("id", as: String.self) else {
+            throw StatusError.incorrectStatusId
+        }
+
+        guard let statusId = statusIdString.toId() else {
+            throw StatusError.incorrectStatusId
+        }
+
+        let statusesService = request.application.services.statusesService
+        guard let status = try await statusesService.get(id: statusId, on: request.db) else {
+            throw EntityNotFoundError.statusNotFound
+        }
+
+        guard status.$user.id == authorizationPayloadId else {
+            throw EntityForbiddenError.statusForbidden
+        }
+
+        status.pinnedAt = nil
+        try await status.save(on: request.db)
+
+        if status.isLocal {
+            try await request
+                .queues(.statusUnpinner)
+                .dispatch(StatusUnpinnerJob.self, statusId, maxRetryCount: 2)
+        }
+
+        guard let statusFromDatabaseAfterUnpin = try await statusesService.get(id: statusId, on: request.db) else {
+            throw EntityNotFoundError.statusNotFound
+        }
+
+        return await statusesService.convertToDto(status: statusFromDatabaseAfterUnpin,
+                                                  attachments: statusFromDatabaseAfterUnpin.attachments,
                                                   attachUserInteractions: true,
                                                   on: request.executionContext)
     }

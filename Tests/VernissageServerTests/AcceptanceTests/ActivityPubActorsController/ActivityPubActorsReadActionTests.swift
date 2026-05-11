@@ -41,6 +41,7 @@ extension ControllersTests {
             #expect(personDto.outbox == "http://localhost:8080/actors/tronddedal/outbox", "Property 'outbox' is not valid.")
             #expect(personDto.following == "http://localhost:8080/actors/tronddedal/following", "Property 'inbox' is not valid.")
             #expect(personDto.followers == "http://localhost:8080/actors/tronddedal/followers", "Property 'outbox' is not valid.")
+            #expect(personDto.featured == "http://localhost:8080/actors/tronddedal/featured", "Property 'featured' is not valid.")
             #expect(personDto.preferredUsername == "tronddedal", "Property 'preferredUsername' is not valid.")
             
             #expect(personDto.attachment?[0].name == "KEY1", "Property 'fields[0].name' is not valid.")
@@ -51,6 +52,25 @@ extension ControllersTests {
             
             #expect(personDto.attachment?[0].type == "PropertyValue", "Property 'fields[0].type' is not valid.")
             #expect(personDto.attachment?[1].type == "PropertyValue", "Property 'fields[1].type' is not valid.")
+        }
+        
+        @Test
+        func `Actor profile should return movedTo actor id when account was moved`() async throws {
+            // Arrange.
+            let user = try await application.createUser(userName: "movedsource")
+            let movedToUser = try await application.createUser(userName: "movedtarget")
+            user.$movedTo.id = try movedToUser.requireID()
+            try await user.save(on: application.db)
+            
+            // Act.
+            let personDto = try await application.getResponse(
+                to: "/actors/movedsource",
+                version: .none,
+                decodeTo: PersonDto.self
+            )
+            
+            // Assert.
+            #expect(personDto.movedTo == movedToUser.activityPubProfile)
         }
         
         @Test

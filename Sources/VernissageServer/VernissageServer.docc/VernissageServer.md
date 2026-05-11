@@ -132,6 +132,8 @@ a secure HTTP signature, and some are only accessible to registered users of a s
 - ``TrendingController``
 - ``UserAliasesController``
 - ``UserBlockedDomainsController``
+- ``UserBlockedUsersController``
+- ``UserMutesController``
 - ``UsersController``
 - ``UserSettingsController``
 - ``WellKnownController``
@@ -144,6 +146,7 @@ The list below contains definitions of the objects used for communication with V
 - ``AccessTokenDto``
 - ``ActivityPubFollowRequestDto``
 - ``ActivityPubFollowRespondDto``
+- ``ActivityPubProfileUpdateJobDto``
 - ``ActivityPubReblogDto``
 - ``ActivityPubRequestDto``
 - ``ActivityPubRequestMethod``
@@ -253,11 +256,17 @@ The list below contains definitions of the objects used for communication with V
 - ``TemporaryAttachmentDto``
 - ``TrendingStatusPeriodDto``
 - ``TwoFactorTokenDto``
+- ``UnfollowRequestDto``
 - ``UserAliasDto``
 - ``UserBlockedDomainDto``
+- ``UserBlockedUserDto``
+- ``UserBlockRequestDto``
 - ``UserDto``
+- ``UserMoveDto``
+- ``UserMuteDto``
 - ``UserMuteRequestDto``
 - ``UserSettingDto``
+- ``UserUnmoveDto``
 - ``UserTypeDto``
 - ``WebPushDto``
 
@@ -269,8 +278,10 @@ The list below contains definitions of the objects used for communication with V
 
 ### Services
 
+- ``ActivityPubProfileUpdateService``
 - ``ActivityPubService``
 - ``ActivityPubSignatureService``
+- ``AccountMigrationService``
 - ``ArchivesService``
 - ``ArticlesService``
 - ``AtomService``
@@ -278,6 +289,8 @@ The list below contains definitions of the objects used for communication with V
 - ``AuthenticationDynamicClientsService``
 - ``BusinessCardsService``
 - ``ClearAttachmentsService``
+- ``ClearDeletedUsersService``
+- ``CollectionsService``
 - ``CryptoService``
 - ``EmailsService``
 - ``ErrorItemsService``
@@ -295,18 +308,22 @@ The list below contains definitions of the objects used for communication with V
 - ``PurgeStatusesService``
 - ``QuickCaptchaService``
 - ``RelationshipsService``
+- ``ReportsService``
 - ``RolesService``
 - ``RssService``
 - ``SearchService``
 - ``SettingsService``
 - ``SnowflakeService``
 - ``StatusesService``
+- ``SuspendedServersService``
 - ``TemporaryFileService``
 - ``TimelineService``
 - ``TokensService``
 - ``TrendingService``
 - ``TwoFactorTokensService``
+- ``UserAliasesService``
 - ``UserBlockedDomainsService``
+- ``UserBlockedUsersService``
 - ``UserMutesService``
 - ``UsersService``
 - ``WebPushService``
@@ -323,6 +340,7 @@ The list below contains definitions of the objects used for communication with V
 ### Errors
 
 - ``AccountError``
+- ``AccountMigrationError``
 - ``ActionsForbiddenError``
 - ``ActivityPubError``
 - ``AttachmentError``
@@ -381,16 +399,21 @@ The list below contains definitions of the objects used for communication with V
 
 - ``ActivityPubFollowRequesterJob``
 - ``ActivityPubFollowResponderJob``
+- ``ActivityPubProfileUpdateJob``
 - ``ActivityPubSharedInboxJob``
 - ``ActivityPubStatusJob``
 - ``ActivityPubUserInboxJob``
 - ``ActivityPubUserOutboxJob``
+- ``CollectionUpdaterJob``
 - ``EmailJob``
+- ``FlagCreaterJob``
 - ``FollowingImporterJob``
 - ``StatusCreaterJob``
 - ``StatusDeleterJob``
 - ``StatusFavouriterJob``
+- ``StatusPinnerJob``
 - ``StatusUnfavouriterJob``
+- ``StatusUnpinnerJob``
 - ``StatusRebloggerJob``
 - ``StatusUnrebloggerJob``
 - ``StatusUpdaterJob``
@@ -401,6 +424,7 @@ The list below contains definitions of the objects used for communication with V
 ### Scheduled Background Jobs
 
 - ``ClearAttachmentsJob``
+- ``ClearDeletedUsersJob``
 - ``ClearErrorItemsJob``
 - ``ClearFailedLoginsJob``
 - ``ClearQuickCaptchasJob``
@@ -497,6 +521,7 @@ The list below contains definitions of the objects used for communication with V
 - ``StatusMention``
 - ``StatusMentionHistory``
 - ``StatusVisibility``
+- ``SuspendedServer``
 - ``TrendingHashtag``
 - ``TrendingPeriod``
 - ``TrendingStatus``
@@ -504,6 +529,7 @@ The list below contains definitions of the objects used for communication with V
 - ``TwoFactorToken``
 - ``User``
 - ``UserAlias``
+- ``UserBlockedUser``
 - ``UserBlockedDomain``
 - ``UserHashtag``
 - ``UserMute``

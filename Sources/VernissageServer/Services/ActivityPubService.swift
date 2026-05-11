@@ -85,6 +85,14 @@ protocol ActivityPubServiceType: Sendable {
     ///   - context: The execution context providing services and database access.
     /// - Throws: Throws an error if rejection fails or the activity type is unsupported.
     func reject(activityPubRequest: ActivityPubRequestDto, on context: ExecutionContext) async throws
+    
+    /// Processes account migration from `Move` activity.
+    ///
+    /// - Parameters:
+    ///   - activityPubRequest: The ActivityPub request DTO containing the move activity.
+    ///   - context: The execution context providing services and database access.
+    /// - Throws: Throws an error if migration processing fails.
+    func move(activityPubRequest: ActivityPubRequestDto, on context: ExecutionContext) async throws
 
     /// Determines whether an incoming undo activity should be processed.
     ///
@@ -137,6 +145,22 @@ protocol ActivityPubServiceType: Sendable {
     ///   - context: The execution context providing services and database access.
     /// - Throws: Throws an error if the report cannot be created.
     func flag(activityPubRequest: ActivityPubRequestDto, on context: ExecutionContext) async throws
+
+    /// Processes inbound ActivityPub `Add` activity for featured collections.
+    ///
+    /// - Parameters:
+    ///   - activityPubRequest: Incoming ActivityPub request payload.
+    ///   - context: The execution context providing services and database access.
+    /// - Throws: Throws an error if synchronization flow fails.
+    func add(activityPubRequest: ActivityPubRequestDto, on context: ExecutionContext) async throws
+
+    /// Processes inbound ActivityPub `Remove` activity for featured collections.
+    ///
+    /// - Parameters:
+    ///   - activityPubRequest: Incoming ActivityPub request payload.
+    ///   - context: The execution context providing services and database access.
+    /// - Throws: Throws an error if synchronization flow fails.
+    func remove(activityPubRequest: ActivityPubRequestDto, on context: ExecutionContext) async throws
 
     /// Creates and distributes a status based on the given ActivityPub status event.
     ///
@@ -201,6 +225,22 @@ protocol ActivityPubServiceType: Sendable {
     ///   - context: The execution context providing services and database access.
     /// - Throws: Throws an error if the unannounce cannot be sent, or if validation or processing fails.
     func unannounce(statusActivityPubEvent: StatusActivityPubEvent, activityPubUnreblog: ActivityPubUnreblogDto?, on context: ExecutionContext) async throws
+
+    /// Creates and distributes a pin activity (`Add` to featured collection) based on the given status event.
+    ///
+    /// - Parameters:
+    ///   - statusActivityPubEvent: The event describing the pin action and its distribution targets.
+    ///   - context: The execution context providing services and database access.
+    /// - Throws: Throws an error if the pin cannot be sent, or if validation or processing fails.
+    func pin(statusActivityPubEvent: StatusActivityPubEvent, on context: ExecutionContext) async throws
+
+    /// Creates and distributes an unpin activity (`Remove` from featured collection) based on the given status event.
+    ///
+    /// - Parameters:
+    ///   - statusActivityPubEvent: The event describing the unpin action and its distribution targets.
+    ///   - context: The execution context providing services and database access.
+    /// - Throws: Throws an error if the unpin cannot be sent, or if validation or processing fails.
+    func unpin(statusActivityPubEvent: StatusActivityPubEvent, on context: ExecutionContext) async throws
     
     /// Checks if the domain of the actor ID is blocked by the local instance.
     ///
@@ -237,7 +277,7 @@ protocol ActivityPubServiceType: Sendable {
     /// - Returns: Returns `true` if the actor is blocked, otherwise `false`.
     /// - Throws: Throws an error if the check fails.
     func isActorBlockedByInstance(activity: ActivityDto, on context: ExecutionContext) async throws -> Bool
-    
+
     /// Checks if the domain of the actor ID is blocked by the user.
     ///
     /// - Parameters:
@@ -271,7 +311,7 @@ final class ActivityPubService: ActivityPubServiceType {
         let objects = activityPubRequest.activity.object.objects()
         for object in objects {
             switch object.type {
-            case .some(.note), .some(.tombstone):
+            case .note, .tombstone:
                 context.logger.info("Deleting status: '\(object.id)'.")
                 guard let statusToDelete = try await statusesService.get(activityPubId: object.id, on: context.db) else {
                     context.logger.info("Deleting status: '\(object.id)'. Status not exists in local database.")
@@ -285,11 +325,18 @@ final class ActivityPubService: ActivityPubServiceType {
                 
                 // Validate signature (also with users downloaded from remote server).
                 try await activityPubSignatureService.validateSignature(activityPubRequest: activityPubRequest, on: context)
+
+                let actorId = activityPubRequest.activity.actor.actorIds().first
+                let statusOwnerActivityPubProfile = statusToDelete.user.activityPubProfile
+                guard actorId == statusOwnerActivityPubProfile else {
+                    context.logger.warning("Cannot delete status because activity actor doesn't match status owner (activity: \(activityPubRequest.activity.id), actor: \(actorId ?? "<unknown>"), status: \(object.id), owner: \(statusOwnerActivityPubProfile)).")
+                    continue
+                }
                 
                 // Signature verified, we can delete status.
                 try await statusesService.delete(id: statusToDelete.requireID(), on: context.application.db)
                 context.logger.info("Deleting status: '\(object.id)'. Status deleted from local database successfully.")
-            case .none, .some(.profile):
+            case .person, .service, .none:
                 context.logger.info("Deleting user: '\(object.id)'.")
                 guard let userToDelete = try await usersService.get(activityPubProfile: object.id, on: context.application.db) else {
                     context.logger.info("Deleting user: '\(object.id)'. User not exists in local database.")
@@ -304,12 +351,18 @@ final class ActivityPubService: ActivityPubServiceType {
                 // Validate signature with local database only (user has been alredy removed from remote).
                 try await activityPubSignatureService.validateLocalSignature(activityPubRequest: activityPubRequest, on: context)
 
-                // Signature verified, we have to delete all user's statuses first.
-                try await statusesService.delete(owner: userToDelete.requireID(), on: context)
-                
+                let actorId = activityPubRequest.activity.actor.actorIds().first
+                let userActivityPubProfile = userToDelete.activityPubProfile
+                guard actorId == userActivityPubProfile else {
+                    context.logger.warning("Cannot delete user because activity actor doesn't match profile id (activity: \(activityPubRequest.activity.id), actor: \(actorId ?? "<unknown>"), profile: \(userActivityPubProfile)).")
+                    continue
+                }
+
                 // Now we can delete user (and all user's references) from database.
-                try await usersService.delete(remoteUser: userToDelete, on: context.application.db)
+                try await usersService.delete(remoteUser: userToDelete, on: context)
                 context.logger.info("Deleting user: '\(object.id)'. User deleted from local database successfully.")
+            case .profile:
+                context.logger.info("Ignoring delete object of type 'Profile' (object: '\(object.id)').")
             default:
                 context.logger.warning("Deleting object type: '\(object.type?.rawValue ?? "<unknown>")' is not supported yet.",
                                        metadata: [Constants.requestMetadata: activityPubRequest.bodyValue.loggerMetadata()])
@@ -421,6 +474,7 @@ final class ActivityPubService: ActivityPubServiceType {
     
     public func update(activityPubRequest: ActivityPubRequestDto, on context: ExecutionContext) async throws {
         let statusesService = context.services.statusesService
+        let usersService = context.services.usersService
         let activity = activityPubRequest.activity
         
         let objects = activity.object.objects()
@@ -442,61 +496,109 @@ final class ActivityPubService: ActivityPubServiceType {
                     continue
                 }
 
+                let actorId = activity.actor.actorIds().first
+                let statusOwnerActivityPubProfile = statusFromDatabase.user.activityPubProfile
+                guard actorId == statusOwnerActivityPubProfile else {
+                    context.logger.warning("Cannot update status because activity actor doesn't match status owner (activity: \(activity.id), actor: \(actorId ?? "<unknown>"), status: \(noteDto.id), owner: \(statusOwnerActivityPubProfile)).")
+                    continue
+                }
+
                 // Update status into database.
                 _ = try await statusesService.update(status: statusFromDatabase, basedOn: noteDto, on: context)
+            case .person, .service:
+                guard let personDto = object.object as? PersonDto else {
+                    context.logger.warning("Cannot cast profile object to PersonDto (activity: \(activity.id).")
+                    continue
+                }
+
+                guard let user = try await usersService.get(activityPubProfile: personDto.id, on: context.db) else {
+                    context.logger.warning("Cannot update profile because user doesn't exist in local database (activity: \(personDto.id)).")
+                    continue
+                }
+
+                guard user.isLocal == false else {
+                    context.logger.warning("Cannot update local user based on remote profile update (activity: \(personDto.id)).")
+                    continue
+                }
+                
+                let actorId = activity.actor.actorIds().first
+                let profileOwnerActivityPubProfile = user.activityPubProfile
+                guard actorId == profileOwnerActivityPubProfile else {
+                    context.logger.warning("Cannot update profile because activity actor doesn't match profile id (activity: \(activity.id), actor: \(actorId ?? "<unknown>"), profile: \(personDto.id)).")
+                    continue
+                }
+
+                let profileIconFileName = await usersService.downloadProfileImage(personProfile: personDto, on: context)
+                let profileImageFileName = await usersService.downloadHeaderImage(personProfile: personDto, on: context)
+
+                // Update user in local database based on received ActivityPub profile.
+                _ = try await usersService.update(user: user,
+                                                  basedOn: personDto,
+                                                  withAvatarFileName: profileIconFileName,
+                                                  withHeaderFileName: profileImageFileName,
+                                                  on: context)
+            case .profile:
+                context.logger.info("Ignoring update object of type 'Profile' (activity: \(activity.id), object: \(object.id)).")
             default:
                 context.logger.warning("Object type: '\(object.type?.rawValue ?? "<unknown>")' is not supported yet for update.",
                                        metadata: [Constants.requestMetadata: activityPubRequest.bodyValue.loggerMetadata()])
             }
         }
     }
-    
+
     public func follow(activityPubRequest: ActivityPubRequestDto, on context: ExecutionContext) async throws {
         let activity = activityPubRequest.activity
-        let actorIds = activity.actor.actorIds()
         
-        for actorId in actorIds {
-            let objects = activity.object.objects()
-            for object in objects {
-                let domainIsBlockedByUser = try await self.isDomainBlockedByUser(userActivityPubId: object.id, actorId: actorId, on: context)
-                guard domainIsBlockedByUser == false else {
-                    context.logger.notice("Actor's domain: '\(actorId)' is blocked by user's (\(object.id)) domain blocks.")
-                    continue
-                }
-                
-                let userIsBlockedByUser = try await self.isUserBlockedByUser(userActivityPubId: object.id, actorId: actorId, on: context)
-                guard userIsBlockedByUser == false else {
-                    context.logger.notice("Actor: '\(actorId)' is blocked by user (\(object.id)) .")
-                    continue
-                }
-                
-                try await self.follow(sourceProfileUrl: actorId, activityPubObject: object, activityId: activity.id, on: context)
+        guard let actorId = activity.actor.actorIds().first else {
+            return
+        }
+        
+        let objects = activity.object.objects()
+        for object in objects {
+            let domainIsBlockedByUser = try await self.isDomainBlockedByUser(userActivityPubId: object.id, actorId: actorId, on: context)
+            guard domainIsBlockedByUser == false else {
+                context.logger.notice("Actor's domain: '\(actorId)' is blocked by user's (\(object.id)) domain blocks.")
+                continue
             }
+            
+            let userIsBlockedByUser = try await self.isUserBlockedByUser(userActivityPubId: object.id, actorId: actorId, on: context)
+            guard userIsBlockedByUser == false else {
+                context.logger.notice("Actor: '\(actorId)' is blocked by user (\(object.id)) .")
+                continue
+            }
+            
+            try await self.follow(sourceProfileUrl: actorId, activityPubObject: object, activityId: activity.id, on: context)
         }
     }
     
     public func accept(activityPubRequest: ActivityPubRequestDto, on context: ExecutionContext) async throws {
         let activity = activityPubRequest.activity
-        let actorIds = activity.actor.actorIds()
+        
+        guard let targetActorId = activity.actor.actorIds().first else {
+            return
+        }
 
-        for targetActorId in actorIds {
-            let objects = activity.object.objects()
-            for object in objects {
-                try await self.accept(targetProfileUrl: targetActorId, activityPubObject: object, on: context)
-            }
+        let objects = activity.object.objects()
+        for object in objects {
+            try await self.accept(targetProfileUrl: targetActorId, activityPubObject: object, on: context)
         }
     }
 
     public func reject(activityPubRequest: ActivityPubRequestDto, on context: ExecutionContext) async throws {
         let activity = activityPubRequest.activity
-        let actorIds = activity.actor.actorIds()
-
-        for targetActorId in actorIds {
-            let objects = activity.object.objects()
-            for object in objects {
-                try await self.reject(targetProfileUrl: targetActorId, activityPubObject: object, on: context)
-            }
+        
+        guard let targetActorId = activity.actor.actorIds().first else {
+            return
         }
+
+        let objects = activity.object.objects()
+        for object in objects {
+            try await self.reject(targetProfileUrl: targetActorId, activityPubObject: object, on: context)
+        }
+    }
+    
+    public func move(activityPubRequest: ActivityPubRequestDto, on context: ExecutionContext) async throws {
+        try await context.services.accountMigrationService.processMove(activityPubRequest: activityPubRequest, on: context)
     }
 
     func should​Process​Undo(activityPubRequest: ActivityPubRequestDto, on context: ExecutionContext) async throws -> Bool {
@@ -509,61 +611,58 @@ final class ActivityPubService: ActivityPubServiceType {
         for object in objects {
             switch object.type {
             case .follow:
-                for sourceActorId in activity.actor.actorIds() {
-                    guard let followDto = object.object as? FollowDto,
-                          let followActors = followDto.object?.objects() else {
-                        continue
-                    }
+                guard let sourceActorId = activity.actor.actorIds().first,
+                      let followDto = object.object as? FollowDto,
+                      let followActors = followDto.object?.objects() else {
+                    continue
+                }
 
-                    guard let _ = try await usersService.get(activityPubProfile: sourceActorId, on: context.db) else {
+                guard let _ = try await usersService.get(activityPubProfile: sourceActorId, on: context.db) else {
+                    continue
+                }
+                
+                for followActor in followActors {
+                    guard let _ = try await usersService.get(activityPubProfile: followActor.id, on: context.db) else {
                         continue
                     }
                     
-                    for followActor in followActors {
-                        guard let _ = try await usersService.get(activityPubProfile: followActor.id, on: context.db) else {
-                            continue
-                        }
-                        
-                        return true
-                    }
+                    return true
                 }
             case .announce:
-                for sourceActorId in activity.actor.actorIds() {
-                    guard let announceDto = object.object as? AnnouceDto,
-                          let announceObjects = announceDto.object?.objects() else {
-                        continue
-                    }
+                guard let sourceActorId = activity.actor.actorIds().first,
+                      let announceDto = object.object as? AnnouceDto,
+                      let announceObjects = announceDto.object?.objects() else {
+                    continue
+                }
 
-                    guard let _ = try await usersService.get(activityPubProfile: sourceActorId, on: context.db) else {
+                guard let _ = try await usersService.get(activityPubProfile: sourceActorId, on: context.db) else {
+                    continue
+                }
+                
+                for announceObject in announceObjects {
+                    guard let _ = try await statusesService.get(activityPubId: announceObject.id, on: context.db) else {
                         continue
                     }
                     
-                    for announceObject in announceObjects {
-                        guard let _ = try await statusesService.get(activityPubId: announceObject.id, on: context.db) else {
-                            continue
-                        }
-                        
-                        return true
-                    }
+                    return true
                 }
             case .like:
-                for sourceActorId in activity.actor.actorIds() {
-                    guard let announceDto = object.object as? LikeDto,
-                          let likeObjects = announceDto.object?.objects() else {
+                guard let sourceActorId = activity.actor.actorIds().first,
+                      let announceDto = object.object as? LikeDto,
+                      let likeObjects = announceDto.object?.objects() else {
+                    continue
+                }
+                
+                guard let _ = try await usersService.get(activityPubProfile: sourceActorId, on: context.db) else {
+                    continue
+                }
+                
+                for likeObject in likeObjects {
+                    guard let _ = try await statusesService.get(activityPubId: likeObject.id, on: context.db) else {
                         continue
                     }
                     
-                    guard let _ = try await usersService.get(activityPubProfile: sourceActorId, on: context.db) else {
-                        continue
-                    }
-                    
-                    for likeObject in likeObjects {
-                        guard let _ = try await statusesService.get(activityPubId: likeObject.id, on: context.db) else {
-                            continue
-                        }
-                        
-                        return true
-                    }
+                    return true
                 }
             default:
                 context.logger.warning("Undo of '\(object.type?.rawValue ?? "<unknown>")' action is not supported yet",
@@ -578,21 +677,19 @@ final class ActivityPubService: ActivityPubServiceType {
     func undo(activityPubRequest: ActivityPubRequestDto, on context: ExecutionContext) async throws {
         let activity = activityPubRequest.activity
         let objects = activity.object.objects()
+        
+        guard let sourceActorId = activity.actor.actorIds().first else {
+            return
+        }
 
         for object in objects {
             switch object.type {
             case .follow:
-                for sourceActorId in activity.actor.actorIds() {
-                    try await self.unfollow(sourceActorId: sourceActorId, activityPubObject: object, on: context)
-                }
+                try await self.unfollow(sourceActorId: sourceActorId, activityPubObject: object, on: context)
             case .announce:
-                for sourceActorId in activity.actor.actorIds() {
-                    try await self.unannounce(sourceActorId: sourceActorId, activityPubObject: object, on: context)
-                }
+                try await self.unannounce(sourceActorId: sourceActorId, activityPubObject: object, on: context)
             case .like:
-                for sourceActorId in activity.actor.actorIds() {
-                    try await self.unlike(sourceActorId: sourceActorId, activityPubObject: object, on: context)
-                }
+                try await self.unlike(sourceActorId: sourceActorId, activityPubObject: object, on: context)
             default:
                 context.logger.warning("Undo of '\(object.type?.rawValue ?? "<unknown>")' action is not supported yet",
                                        metadata: [Constants.requestMetadata: activityPubRequest.bodyValue.loggerMetadata()])
@@ -844,6 +941,14 @@ final class ActivityPubService: ActivityPubServiceType {
         try await self.sendAdminReportNotifications(reportedUser: reportedUser, on: context)
         context.logger.info("Report (id: '\(reportId)') has been created from ActivityPub Flag (activity: \(activity.id)).")
     }
+
+    func add(activityPubRequest: ActivityPubRequestDto, on context: ExecutionContext) async throws {
+        try await self.refreshRemoteUser(activityPubRequest: activityPubRequest, action: "Add", on: context)
+    }
+
+    func remove(activityPubRequest: ActivityPubRequestDto, on context: ExecutionContext) async throws {
+        try await self.refreshRemoteUser(activityPubRequest: activityPubRequest, action: "Remove", on: context)
+    }
     
     private func reportedLocalStatus(from objects: [ObjectDto], on context: ExecutionContext) async throws -> Status? {
         let statusesService = context.services.statusesService
@@ -897,7 +1002,7 @@ final class ActivityPubService: ActivityPubServiceType {
         let statusesService = context.services.statusesService
         let suspendedServersService = context.services.suspendedServersService
 
-        guard let status = try await statusesService.get(id: statusActivityPubEvent.status.requireID(), on: context.db) else {
+        guard let status = try await self.getStatus(statusActivityPubEvent: statusActivityPubEvent, on: context) else {
             return
         }
         
@@ -975,7 +1080,7 @@ final class ActivityPubService: ActivityPubServiceType {
         let statusesService = context.services.statusesService
         let suspendedServersService = context.services.suspendedServersService
 
-        guard let status = try await statusesService.get(id: statusActivityPubEvent.status.requireID(), on: context.db) else {
+        guard let status = try await self.getStatus(statusActivityPubEvent: statusActivityPubEvent, on: context) else {
             return
         }
         
@@ -1062,11 +1167,10 @@ final class ActivityPubService: ActivityPubServiceType {
             return
         }
         
-        let statusesService = context.services.statusesService
         let usersService = context.services.usersService
         let suspendedServersService = context.services.suspendedServersService
         
-        guard let status = try await statusesService.get(id: statusActivityPubEvent.status.requireID(), on: context.db) else {
+        guard let status = try await self.getStatus(statusActivityPubEvent: statusActivityPubEvent, on: context) else {
             return
         }
         
@@ -1145,11 +1249,10 @@ final class ActivityPubService: ActivityPubServiceType {
             return
         }
         
-        let statusesService = context.services.statusesService
         let usersService = context.services.usersService
         let suspendedServersService = context.services.suspendedServersService
         
-        guard let status = try await statusesService.get(id: statusActivityPubEvent.status.requireID(), on: context.db) else {
+        guard let status = try await self.getStatus(statusActivityPubEvent: statusActivityPubEvent, on: context) else {
             return
         }
         
@@ -1228,10 +1331,9 @@ final class ActivityPubService: ActivityPubServiceType {
             return
         }
         
-        let statusesService = context.services.statusesService
         let suspendedServersService = context.services.suspendedServersService
 
-        guard let status = try await statusesService.get(id: statusActivityPubEvent.status.requireID(), on: context.db) else {
+        guard let status = try await self.getStatus(statusActivityPubEvent: statusActivityPubEvent, on: context) else {
             return
         }
         
@@ -1308,13 +1410,11 @@ final class ActivityPubService: ActivityPubServiceType {
             return
         }
         
-        let statusesService = context.services.statusesService
         let suspendedServersService = context.services.suspendedServersService
 
-        guard let status = try await statusesService.get(id: statusActivityPubEvent.status.requireID(), on: context.db) else {
+        guard let status = try await self.getStatus(statusActivityPubEvent: statusActivityPubEvent, on: context) else {
             return
         }
-        
         
         guard let activityPubUnreblog else {
             let errorMessage = "Status unannounce: '\(status.stringId() ?? "")' cannot be send to shared inbox. Missing unannounce data."
@@ -1380,13 +1480,167 @@ final class ActivityPubService: ActivityPubServiceType {
         let hasFailedEvents = statusActivityPubEvent.statusActivityPubEventItems.contains(where: { $0.isSuccess == false || $0.isSuspended == true })
         try await statusActivityPubEvent.success(result: hasFailedEvents ? .finishedWithErrors : .finished, on: context)
     }
+
+    public func pin(statusActivityPubEvent: StatusActivityPubEvent, on context: ExecutionContext) async throws {
+        try await statusActivityPubEvent.start(on: context)
+
+        // Private key is required for sending ActivityPub request.
+        guard let privateKey = try await self.getPrivateKey(statusActivityPubEvent: statusActivityPubEvent, on: context) else {
+            return
+        }
+
+        let suspendedServersService = context.services.suspendedServersService
+        let snowflakeService = context.services.snowflakeService
+
+        guard let status = try await self.getStatus(statusActivityPubEvent: statusActivityPubEvent, on: context) else {
+            return
+        }
+
+        let user = statusActivityPubEvent.user
+        let featuredCollection = user.featured ?? "\(user.activityPubProfile)/featured"
+
+        // Download suspended servers list.
+        let suspendedServers = await suspendedServersService.getSnapshot(on: context)
+
+        // Try to send update only to hosts which we didn't sent update yet.
+        let eventItemsToProceed = statusActivityPubEvent.statusActivityPubEventItems.filter { $0.isSuccess == nil }
+
+        // Send Add activity to all inboxes.
+        for (index, eventItem) in eventItemsToProceed.enumerated() {
+            try await eventItem.start(on: context)
+
+            guard let inboxUrl = URL(string: eventItem.url) else {
+                let errorMessage = "Pin: '\(status.stringId() ?? "")' cannot be send to shared inbox url: '\(eventItem.url)'. Incorrect url."
+
+                try? await eventItem.error(errorMessage, on: context)
+                context.logger.warning("\(errorMessage)")
+                continue
+            }
+
+            let shouldSend = await suspendedServersService.shouldSend(to: inboxUrl.host, basedOn: suspendedServers)
+            guard shouldSend else {
+                try? await eventItem.suspended(on: context)
+                context.logger.warning("Sending pin skipped for suspended host: '\(inboxUrl.host ?? "<unknown>")'.")
+                continue
+            }
+
+            context.logger.info("[\(index + 1)/\(eventItemsToProceed.count)] Sending pin: '\(status.stringId() ?? "")' to shared inbox: '\(inboxUrl.absoluteString)'.")
+            let activityPubClient = ActivityPubClient(privatePemKey: privateKey, userAgent: Constants.userAgent, host: inboxUrl.host)
+            let requestId = snowflakeService.generate()
+
+            do {
+                try await activityPubClient.addToFeatured(objectId: status.activityPubId,
+                                                          actorId: user.activityPubProfile,
+                                                          targetId: featuredCollection,
+                                                          on: inboxUrl,
+                                                          withId: requestId)
+
+                try? await eventItem.success(on: context)
+                try? await suspendedServersService.registerSuccess(for: inboxUrl.host, on: context)
+            } catch {
+                try? await eventItem.error("\(error)", on: context)
+                try? await suspendedServersService.registerConnectionError(for: inboxUrl.host, error: error, on: context)
+                context.logger.warning("Sending pin to shared inbox error. Shared inbox url: \(inboxUrl). Error: \(error).")
+            }
+        }
+
+        // Mark event as finished successfully.
+        let hasFailedEvents = statusActivityPubEvent.statusActivityPubEventItems.contains(where: { $0.isSuccess == false || $0.isSuspended == true })
+        try await statusActivityPubEvent.success(result: hasFailedEvents ? .finishedWithErrors : .finished, on: context)
+    }
+
+    public func unpin(statusActivityPubEvent: StatusActivityPubEvent, on context: ExecutionContext) async throws {
+        try await statusActivityPubEvent.start(on: context)
+
+        // Private key is required for sending ActivityPub request.
+        guard let privateKey = try await self.getPrivateKey(statusActivityPubEvent: statusActivityPubEvent, on: context) else {
+            return
+        }
+
+        let suspendedServersService = context.services.suspendedServersService
+        let snowflakeService = context.services.snowflakeService
+
+        guard let status = try await self.getStatus(statusActivityPubEvent: statusActivityPubEvent, on: context) else {
+            return
+        }
+
+        let user = statusActivityPubEvent.user
+        let featuredCollection = user.featured ?? "\(user.activityPubProfile)/featured"
+
+        // Download suspended servers list.
+        let suspendedServers = await suspendedServersService.getSnapshot(on: context)
+
+        // Try to send update only to hosts which we didn't sent update yet.
+        let eventItemsToProceed = statusActivityPubEvent.statusActivityPubEventItems.filter { $0.isSuccess == nil }
+
+        // Send Remove activity to all inboxes.
+        for (index, eventItem) in eventItemsToProceed.enumerated() {
+            try await eventItem.start(on: context)
+
+            guard let inboxUrl = URL(string: eventItem.url) else {
+                let errorMessage = "Unpin: '\(status.stringId() ?? "")' cannot be send to shared inbox url: '\(eventItem.url)'. Incorrect url."
+
+                try? await eventItem.error(errorMessage, on: context)
+                context.logger.warning("\(errorMessage)")
+                continue
+            }
+
+            let shouldSend = await suspendedServersService.shouldSend(to: inboxUrl.host, basedOn: suspendedServers)
+            guard shouldSend else {
+                try? await eventItem.suspended(on: context)
+                context.logger.warning("Sending unpin skipped for suspended host: '\(inboxUrl.host ?? "<unknown>")'.")
+                continue
+            }
+
+            context.logger.info("[\(index + 1)/\(eventItemsToProceed.count)] Sending unpin: '\(status.stringId() ?? "")' to shared inbox: '\(inboxUrl.absoluteString)'.")
+            let activityPubClient = ActivityPubClient(privatePemKey: privateKey, userAgent: Constants.userAgent, host: inboxUrl.host)
+            let requestId = snowflakeService.generate()
+
+            do {
+                try await activityPubClient.removeFromFeatured(objectId: status.activityPubId,
+                                                               actorId: user.activityPubProfile,
+                                                               targetId: featuredCollection,
+                                                               on: inboxUrl,
+                                                               withId: requestId)
+
+                try? await eventItem.success(on: context)
+                try? await suspendedServersService.registerSuccess(for: inboxUrl.host, on: context)
+            } catch {
+                try? await eventItem.error("\(error)", on: context)
+                try? await suspendedServersService.registerConnectionError(for: inboxUrl.host, error: error, on: context)
+                context.logger.warning("Sending unpin to shared inbox error. Shared inbox url: \(inboxUrl). Error: \(error).")
+            }
+        }
+
+        // Mark event as finished successfully.
+        let hasFailedEvents = statusActivityPubEvent.statusActivityPubEventItems.contains(where: { $0.isSuccess == false || $0.isSuspended == true })
+        try await statusActivityPubEvent.success(result: hasFailedEvents ? .finishedWithErrors : .finished, on: context)
+    }
+    
+    private func getStatus(statusActivityPubEvent: StatusActivityPubEvent, on context: ExecutionContext) async throws -> Status? {
+        let statusesService = context.services.statusesService
+        let operation = statusActivityPubEvent.type
+
+        guard let status = try await statusesService.get(id: statusActivityPubEvent.status.requireID(), on: context.db) else {
+            let errorMessage = "Status \(operation): '\(statusActivityPubEvent.$status.id)' cannot be downloaded from database."
+            
+            // Mark event as finished with error.
+            try await statusActivityPubEvent.error(errorMessage, on: context)
+            
+            context.logger.warning("\(errorMessage)")
+            return nil
+        }
+        
+        return status
+    }
     
     private func getPrivateKey(statusActivityPubEvent: StatusActivityPubEvent, on context: ExecutionContext) async throws -> String? {
         let user = statusActivityPubEvent.user
         let status = statusActivityPubEvent.status
+        let operation = statusActivityPubEvent.type
 
         guard let privateKey = try await User.query(on: context.application.db).filter(\.$id == user.requireID()).first()?.privateKey else {
-            let errorMessage = "Status event: '\(status.stringId() ?? "")' cannot be send to shared inbox. Missing private key for user '\(status.user.stringId() ?? "")'."
+            let errorMessage = "Status \(operation): '\(status.stringId() ?? "")' cannot be send to shared inbox. Missing private key for user '\(status.user.stringId() ?? "")'."
             
             // Mark event as finished with error.
             try await statusActivityPubEvent.error(errorMessage, on: context)
@@ -1531,6 +1785,18 @@ final class ActivityPubService: ActivityPubServiceType {
             return
         }
         
+        // Account has been moved elsewhere and should not accept new followers.
+        if targetUser.$movedTo.id != nil {
+            try await self.respondReject(requesting: remoteUser.activityPubProfile,
+                                         asked: targetUser.activityPubProfile,
+                                         inbox: remoteUser.userInbox,
+                                         withId: remoteUser.requireID(),
+                                         rejectedId: activityId,
+                                         privateKey: targetUser.privateKey,
+                                         on: context)
+            return
+        }
+        
         // Relationship is automatically approved when user disabled manual approval.
         let approved = targetUser.manuallyApprovesFollowers == false
         
@@ -1573,13 +1839,11 @@ final class ActivityPubService: ActivityPubServiceType {
             throw ActivityPubError.entityCaseError(String(describing: FollowDto.self))
         }
         
-        guard let sourceActorIds = followDto.actor?.actorIds() else {
+        guard let sourceProfileUrl = followDto.actor?.actorIds().first else {
             return
         }
-        
-        for sourceProfileUrl in sourceActorIds {
-            try await self.accept(sourceProfileUrl: sourceProfileUrl, targetProfileUrl: targetProfileUrl, on: context)
-        }
+
+        try await self.accept(sourceProfileUrl: sourceProfileUrl, targetProfileUrl: targetProfileUrl, on: context)
     }
     
     private func accept(sourceProfileUrl: String, targetProfileUrl: String, on context: ExecutionContext) async throws {
@@ -1614,13 +1878,11 @@ final class ActivityPubService: ActivityPubServiceType {
             throw ActivityPubError.entityCaseError(String(describing: FollowDto.self))
         }
         
-        guard let sourceActorIds = followDto.actor?.actorIds() else {
+        guard let sourceProfileUrl = followDto.actor?.actorIds().first else {
             return
         }
-        
-        for sourceProfileUrl in sourceActorIds {
-            try await self.reject(sourceProfileUrl: sourceProfileUrl, targetProfileUrl: targetProfileUrl, on: context)
-        }
+
+        try await self.reject(sourceProfileUrl: sourceProfileUrl, targetProfileUrl: targetProfileUrl, on: context)
     }
     
     private func reject(sourceProfileUrl: String, targetProfileUrl: String, on context: ExecutionContext) async throws {
@@ -1756,6 +2018,34 @@ final class ActivityPubService: ActivityPubServiceType {
             .queues(.apFollowResponder)
             .dispatch(ActivityPubFollowResponderJob.self, activityPubFollowRespondDto)
     }
+    
+    private func respondReject(requesting: String,
+                               asked: String,
+                               inbox: String?,
+                               withId id: Int64,
+                               rejectedId: String,
+                               privateKey: String?,
+                               on context: ExecutionContext) async throws {
+        guard let inbox, let inboxUrl = URL(string: inbox) else {
+            return
+        }
+        
+        guard let privateKey else {
+            return
+        }
+        
+        let activityPubFollowRespondDto = ActivityPubFollowRespondDto(approved: false,
+                                                                      requesting: requesting,
+                                                                      asked: asked,
+                                                                      inbox: inboxUrl,
+                                                                      id: id,
+                                                                      orginalRequestId: rejectedId,
+                                                                      privateKey: privateKey)
+
+        try await context
+            .queues(.apFollowResponder)
+            .dispatch(ActivityPubFollowResponderJob.self, activityPubFollowRespondDto)
+    }
         
     public func downloadStatus(activityPubId: String, on context: ExecutionContext) async throws -> Status {
         let statusesService = context.services.statusesService
@@ -1806,26 +2096,47 @@ final class ActivityPubService: ActivityPubServiceType {
     }
     
     private func downloadRemoteStatus(activityPubId: String, on context: ExecutionContext) async throws -> NoteDto {
+        guard let noteUrl = URL(string: activityPubId) else {
+            await context.logger.store("Invalid URL to note: '\(activityPubId)'.", nil, on: context.application)
+            throw ActivityPubError.invalidNoteUrl(activityPubId)
+        }
+        
+        let usersService = context.services.usersService
+        guard let defaultSystemUser = try await usersService.getDefaultSystemUser(on: context.db) else {
+            throw ActivityPubError.missingInstanceAdminAccount
+        }
+        
+        guard let privateKey = defaultSystemUser.privateKey else {
+            throw ActivityPubError.missingInstanceAdminPrivateKey
+        }
+        
         do {
-            guard let noteUrl = URL(string: activityPubId) else {
-                await context.logger.store("Invalid URL to note: '\(activityPubId)'.", nil, on: context.application)
-                throw ActivityPubError.invalidNoteUrl(activityPubId)
-            }
-            
-            let usersService = context.services.usersService
-            guard let defaultSystemUser = try await usersService.getDefaultSystemUser(on: context.db) else {
-                throw ActivityPubError.missingInstanceAdminAccount
-            }
-            
-            guard let privateKey = defaultSystemUser.privateKey else {
-                throw ActivityPubError.missingInstanceAdminPrivateKey
-            }
-
             let activityPubClient = ActivityPubClient(privatePemKey: privateKey, userAgent: Constants.userAgent, host: noteUrl.host)
             return try await activityPubClient.note(url: noteUrl, activityPubProfile: defaultSystemUser.activityPubProfile)
+        } catch let networkError as NetworkError {
+            let networkErrorDescription: String
+
+            if let localizedDescription = networkError.errorDescription, !localizedDescription.isEmpty {
+                networkErrorDescription = localizedDescription
+            } else {
+                networkErrorDescription = String(describing: networkError)
+            }
+
+            context.logger.warning("Error during download status: '\(activityPubId)'. Error: \(networkErrorDescription)")
+            throw ActivityPubError.statusHasNotBeenDownloaded(activityPubId, networkErrorDescription)
         } catch {
-            await context.logger.store("Error during download status: '\(activityPubId)'.", error, on: context.application)
-            throw ActivityPubError.statusHasNotBeenDownloaded(activityPubId)
+            let errorDescription: String
+
+            if let localizedError = error as? LocalizedError,
+               let localizedDescription = localizedError.errorDescription,
+               !localizedDescription.isEmpty {
+                errorDescription = localizedDescription
+            } else {
+                errorDescription = String(describing: error)
+            }
+
+            context.logger.warning("Error during processing status: '\(activityPubId)'. Error: \(errorDescription)")
+            throw ActivityPubError.statusCannotBeProcessed(activityPubId, errorDescription)
         }
     }
     
@@ -1843,6 +2154,57 @@ final class ActivityPubService: ActivityPubServiceType {
             .count()
 
         return followers > 0
+    }
+
+    private func refreshRemoteUser(activityPubRequest: ActivityPubRequestDto, action: String, on context: ExecutionContext) async throws {
+        guard let actorId = activityPubRequest.activity.actor.actorIds().first else {
+            context.logger.warning("Cannot process '\(action)' for featured collection. Missing actor id.")
+            return
+        }
+
+        let targetIds = activityPubRequest.activity.target?.actorIds() ?? []
+        guard targetIds.isEmpty == false else {
+            context.logger.info("Skipping '\(action)' activity without target collection.")
+            return
+        }
+
+        let usersService = context.services.usersService
+        guard let userFromDatabase = try await usersService.get(activityPubProfile: actorId, on: context.db) else {
+            context.logger.info("Skipping '\(action)' activity for unknown actor: '\(actorId)'.")
+            return
+        }
+
+        let collectionsService = context.services.collectionsService
+        if let featuredCollection = userFromDatabase.featured?.nilIfEmpty {
+            guard targetIds.contains(featuredCollection) else {
+                context.logger.info("Skipping '\(action)' activity for non-featured target.")
+                return
+            }
+
+            try await collectionsService.synchronizeFeaturedCollection(for: userFromDatabase.requireID(), on: context)
+            return
+        }
+
+        let isRemoteUserFollowedByAnyone = try await self.isRemoteUserFollowedByAnyone(activityPubProfile: actorId, on: context)
+        guard isRemoteUserFollowedByAnyone else {
+            context.logger.info("Skipping '\(action)' featured refresh. Remote actor is not followed by any local user: '\(actorId)'.")
+            return
+        }
+
+        let searchService = context.services.searchService
+        let refreshedUser = try await searchService.refreshRemoteUser(activityPubProfile: actorId, on: context) ?? userFromDatabase
+
+        guard let featuredCollection = refreshedUser.featured?.nilIfEmpty else {
+            context.logger.info("Skipping '\(action)' activity for actor without featured collection: '\(actorId)'.")
+            return
+        }
+
+        guard targetIds.contains(featuredCollection) else {
+            context.logger.info("Skipping '\(action)' activity for non-featured target.")
+            return
+        }
+
+        try await collectionsService.synchronizeFeaturedCollection(for: refreshedUser.requireID(), on: context)
     }
     
     private func getParentStatusInDatabase(replyToActivityPubId: String?, on context: ExecutionContext) async throws -> Status? {
