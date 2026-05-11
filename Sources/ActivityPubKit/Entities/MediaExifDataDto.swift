@@ -69,6 +69,8 @@ public extension [MediaExifDataDto] {
         case software = "Software"
         
         // Extensions.
+        case parameters = "Parameters"
+        case workflow = "Workflow"
         case film = "Film"
         case scanner = "Scanner"
         case chemistry = "Chemistry"
@@ -81,7 +83,35 @@ public extension [MediaExifDataDto] {
         formatter.dateFormat = "yyyy:MM:dd HH:mm:ss"
         return formatter
     }
-    
+
+    /// Generation parameters.
+    var parameters: String? {
+        get {
+            return self.first(where: { $0.name == ExifTags.parameters.rawValue })?.value
+        }
+
+        set (newVal) {
+            self.removeAll { $0.name == ExifTags.parameters.rawValue }
+            if let newVal {
+                self.append(MediaExifDataDto(name: ExifTags.parameters.rawValue, value: newVal))
+            }
+        }
+    }
+
+    /// Workflow plain text.
+    var workflow: String? {
+        get {
+            return self.first(where: { $0.name == ExifTags.workflow.rawValue })?.value
+        }
+
+        set (newVal) {
+            self.removeAll { $0.name == ExifTags.workflow.rawValue }
+            if let newVal {
+                self.append(MediaExifDataDto(name: ExifTags.workflow.rawValue, value: newVal))
+            }
+        }
+    }
+
     /// Device manufacturer.
     var make: String? {
         get {

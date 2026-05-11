@@ -55,6 +55,8 @@ struct ExifMediaExifDataTests {
         let exifFromDatabase = try #require(
             Exif(
                 id: 1,
+                parameters: "1girl",
+                workflow: "test",
                 software: "Darktable",
                 film: "Kodak Portra 400",
                 scanner: "Nikon Coolscan",
@@ -67,11 +69,15 @@ struct ExifMediaExifDataTests {
         let exifFromJson = try #require(Exif(id: 2, exifData: exifData))
         
         // Assert.
+        #expect(exifData.parameters == "1girl")
+        #expect(exifData.workflow == "test")
         #expect(exifData.software == "Darktable")
         #expect(exifData.film == "Kodak Portra 400")
         #expect(exifData.scanner == "Nikon Coolscan")
         #expect(exifData.chemistry == "C-41")
-        
+
+        #expect(exifFromJson.parameters == "1girl")
+        #expect(exifFromJson.workflow == "test")
         #expect(exifFromJson.software == "Darktable")
         #expect(exifFromJson.film == "Kodak Portra 400")
         #expect(exifFromJson.scanner == "Nikon Coolscan")
@@ -84,6 +90,8 @@ struct ExifMediaExifDataTests {
         let exif = try #require(
             Exif(
                 id: 1,
+                parameters: "1girl",
+                workflow: "test",
                 software: "Darktable",
                 scanner: "Epson V850",
                 chemistry: "ECN-2"
@@ -95,9 +103,13 @@ struct ExifMediaExifDataTests {
         let exifData = exifHistory.toExifData()
         
         // Assert.
+        #expect(exifHistory.parameters == "1girl")
+        #expect(exifHistory.workflow == "test")
         #expect(exifHistory.software == "Darktable")
         #expect(exifHistory.scanner == "Epson V850")
         #expect(exifHistory.chemistry == "ECN-2")
+        #expect(exifData.parameters == "1girl")
+        #expect(exifData.workflow == "test")
         #expect(exifData.software == "Darktable")
         #expect(exifData.scanner == "Epson V850")
         #expect(exifData.chemistry == "ECN-2")

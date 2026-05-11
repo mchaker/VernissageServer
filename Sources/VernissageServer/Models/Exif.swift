@@ -137,18 +137,21 @@ final class Exif: Model, @unchecked Sendable {
         guard exifData.count > 0 else {
             return nil
         }
-        
-        if exifData.make == nil && exifData.model == nil && exifData.lensModel == nil && exifData.createDateParsed == nil
-            && exifData.focalLenIn35mmFilm == nil && exifData.fNumber == nil && exifData.exposureTime == nil
-            && exifData.photographicSensitivity == nil && exifData.software == nil && exifData.film == nil
-            && exifData.latitude == nil && exifData.longitude == nil && exifData.flash == nil
-            && exifData.focalLength == nil && exifData.scanner == nil && exifData.chemistry == nil {
+
+        if exifData.parameters == nil && exifData.workflow == nil && exifData.make == nil && exifData.model == nil
+            && exifData.lensModel == nil && exifData.createDateParsed == nil && exifData.focalLenIn35mmFilm == nil
+            && exifData.fNumber == nil && exifData.exposureTime == nil && exifData.photographicSensitivity == nil
+            && exifData.software == nil && exifData.film == nil && exifData.latitude == nil
+            && exifData.longitude == nil && exifData.flash == nil && exifData.focalLength == nil
+            && exifData.scanner == nil && exifData.chemistry == nil {
             return nil
         }
         
         self.init()
 
         self.id = id
+        self.parameters = exifData.parameters
+        self.workflow = exifData.workflow
         self.make = exifData.make
         self.model = exifData.model
         self.lens = exifData.lensModel
@@ -202,6 +205,8 @@ extension MediaExifDto {
 extension Exif {
     func toExifData() -> [MediaExifDataDto] {
         var exifData: [MediaExifDataDto] = []
+        exifData.parameters = self.parameters
+        exifData.workflow = self.workflow
         exifData.make = self.make
         exifData.model = self.model
         exifData.lensModel = self.lens

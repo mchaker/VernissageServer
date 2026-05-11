@@ -139,6 +139,8 @@ extension MediaExifDto {
 extension ExifHistory {
     func toExifData() -> [MediaExifDataDto] {
         var exifData: [MediaExifDataDto] = []
+        exifData.parameters = self.parameters
+        exifData.workflow = self.workflow
         exifData.make = self.make
         exifData.model = self.model
         exifData.lensModel = self.lens
