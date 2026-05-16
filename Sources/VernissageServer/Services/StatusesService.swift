@@ -81,6 +81,28 @@ protocol StatusesServiceType: Sendable {
     /// - Returns: The count of statuses or comments.
     /// - Throws: An error if the database query fails.
     func count(onlyComments: Bool, on database: Database) async throws -> Int
+    
+    /// Returns number of seconds user has to wait before creating a new status according to anti-flood limits.
+    ///
+    /// - Parameters:
+    ///   - userId: The user identifier.
+    ///   - isSilent: `true` for silent status creation mode, `false` for regular mode.
+    ///   - isComment: `true` when new status is a comment (has `replyToStatusId`), `false` otherwise.
+    ///   - context: The execution context for database and services.
+    /// - Returns: Number of seconds to wait. `0` means creating a new status is allowed now.
+    /// - Throws: An error if the database query fails.
+    func antiFloodSecondsToWait(userId: Int64, isSilent: Bool, isComment: Bool, on context: ExecutionContext) async throws -> Double
+
+    /// Checks whether user is allowed to add a new status based on anti-flood limits.
+    ///
+    /// - Parameters:
+    ///   - userId: The user identifier.
+    ///   - isSilent: `true` for silent status creation mode, `false` for regular mode.
+    ///   - isComment: `true` when new status is a comment (has `replyToStatusId`), `false` otherwise.
+    ///   - context: The execution context for database and services.
+    /// - Returns: `true` when creating a new status is allowed, otherwise `false`.
+    /// - Throws: An error if the database query fails.
+    func isAntiFloodLimitSatisfied(userId: Int64, isSilent: Bool, isComment: Bool, on context: ExecutionContext) async throws -> Bool
 
     /// Counts statuses pinned by the given user and eligible for ActivityPub `featured` collection.
     ///
@@ -233,6 +255,14 @@ protocol StatusesServiceType: Sendable {
     /// - Throws: An error if the operation fails.
     func createOnLocalTimeline(followersOf userId: Int64, status: Status, on context: ExecutionContext) async throws
 
+    /// Creates status entries on the local timeline for users following hashtags used in the status.
+    ///
+    /// - Parameters:
+    ///   - status: The status whose hashtags define recipients.
+    ///   - context: The execution context for database and services.
+    /// - Throws: An error if the operation fails.
+    func createOnLocalTimelineForHashtagsFollowers(status: Status, on context: ExecutionContext) async throws
+    
     /// Converts a status to a Data Transfer Object (DTO).
     ///
     /// - Parameters:
@@ -567,6 +597,48 @@ final class StatusesService: StatusesServiceType {
 
         return try await query.count()
     }
+    
+    func antiFloodSecondsToWait(userId: Int64, isSilent: Bool, isComment: Bool, on context: ExecutionContext) async throws -> Double {
+        if isComment {
+            return 0
+        }
+
+        let applicationSettings = context.settings.cached
+        let minimumSecondsBetweenRegularStatuses = applicationSettings?.minimumSecondsBetweenRegularStatuses ?? 60
+        let minimumSecondsBetweenSilentStatuses = applicationSettings?.minimumSecondsBetweenSilentStatuses ?? 1
+        let minimumSecondsBetweenNewStatuses = isSilent ? minimumSecondsBetweenSilentStatuses : minimumSecondsBetweenRegularStatuses
+
+        // Value <= 0 means that anti-flood limit is disabled.
+        if minimumSecondsBetweenNewStatuses <= 0 {
+            return 0
+        }
+
+        if let latestStatus = try await Status.query(on: context.db)
+            .filter(\.$user.$id == userId)
+            .filter(\.$replyToStatus.$id == nil)
+            .sort(\.$createdAt, .descending)
+            .first(),
+           let latestStatusCreatedAt = latestStatus.createdAt {
+            let timeIntervalFromLastStatus = Date().timeIntervalSince(latestStatusCreatedAt)
+            let remainingTimeInterval = TimeInterval(minimumSecondsBetweenNewStatuses) - timeIntervalFromLastStatus
+
+            guard remainingTimeInterval > 0 else {
+                return 0
+            }
+
+            return remainingTimeInterval
+        }
+
+        return 0
+    }
+
+    func isAntiFloodLimitSatisfied(userId: Int64, isSilent: Bool, isComment: Bool, on context: ExecutionContext) async throws -> Bool {
+        let antiFloodSecondsToWait = try await self.antiFloodSecondsToWait(userId: userId,
+                                                                           isSilent: isSilent,
+                                                                           isComment: isComment,
+                                                                           on: context)
+        return antiFloodSecondsToWait <= 0
+    }
 
     func countFeatured(userId: Int64, on database: Database) async throws -> Int {
         return try await self.featuredBaseQuery(userId: userId, on: database).count()
@@ -606,7 +678,7 @@ final class StatusesService: StatusesServiceType {
     private func featuredBaseQuery(userId: Int64, on database: Database) -> QueryBuilder<Status> {
         return Status.query(on: database)
             .filter(\.$user.$id == userId)
-            .filter(\.$visibility == .public)
+            .filter(\.$visibility ~~ [.public, .quietPublic])
             .filter(\.$replyToStatus.$id == nil)
             .filter(\.$reblog.$id == nil)
             .filter(\.$pinnedAt != nil)
@@ -749,7 +821,8 @@ final class StatusesService: StatusesServiceType {
 
                 // Create statuses on local followers timeline.
                 try await self.createOnLocalTimeline(followersOf: status.user.requireID(), status: status, on: context)
-
+                try await self.createOnLocalTimelineForHashtagsFollowers(status: status, on: context)
+                
                 // Create mention notifications.
                 try await self.createMentionNotifications(status: status, on: context)
 
@@ -770,6 +843,9 @@ final class StatusesService: StatusesServiceType {
                     try await userStatus.create(on: context.application.db)
                 }
             }
+        case .quietPublic:
+            // Quiet public statuses are visible only on user's profile.
+            break
         }
     }
 
@@ -782,7 +858,7 @@ final class StatusesService: StatusesServiceType {
         try await sendUpdateNotifications(for: status, on: context)
 
         switch status.visibility {
-        case .public, .followers:
+        case .public, .quietPublic, .followers:
             // Update statuses (with images) on remote followers timeline.
             try await self.scheduleStatusSend(status: status,
                                               mainStatus: nil,
@@ -801,7 +877,7 @@ final class StatusesService: StatusesServiceType {
         }
 
         switch status.visibility {
-        case .public, .followers:
+        case .public, .quietPublic, .followers:
             // Create reblogged statuses on local followers timeline.
             try await self.createOnLocalTimeline(followersOf: status.user.requireID(), status: status, on: context)
 
@@ -821,7 +897,7 @@ final class StatusesService: StatusesServiceType {
         }
 
         switch orginalStatus.visibility {
-        case .public, .followers:
+        case .public, .quietPublic, .followers:
             try await self.scheduleUnannounceSend(activityPubUnreblog: activityPubUnreblog, on: context)
         case .mentioned:
             break
@@ -834,7 +910,7 @@ final class StatusesService: StatusesServiceType {
         }
 
         switch status.visibility {
-        case .public:
+        case .public, .quietPublic:
             try await self.scheduleCollectionSend(status: status, type: .pin, on: context)
         case .followers, .mentioned:
             break
@@ -847,7 +923,7 @@ final class StatusesService: StatusesServiceType {
         }
 
         switch status.visibility {
-        case .public:
+        case .public, .quietPublic:
             try await self.scheduleCollectionSend(status: status, type: .unpin, on: context)
         case .followers, .mentioned:
             break
@@ -868,7 +944,7 @@ final class StatusesService: StatusesServiceType {
         }
 
         switch statusFavourite.status.visibility {
-        case .public, .followers:
+        case .public, .quietPublic, .followers:
             // Create favourite statuses on remote servers.
             try await self.scheduleFavouriteSend(statusFavourite: statusFavourite, on: context)
         case .mentioned:
@@ -895,7 +971,7 @@ final class StatusesService: StatusesServiceType {
         }
 
         switch status.visibility {
-        case .public, .followers:
+        case .public, .quietPublic, .followers:
             // Create favourite statuses on remote servers.
             try await self.scheduleUnfavouriteSend(statusFavouriteId: statusFavouriteDto.statusFavouriteId, user: user, status: status, on: context)
         case .mentioned:
@@ -1549,6 +1625,108 @@ final class StatusesService: StatusesServiceType {
         }
     }
 
+    func createOnLocalTimelineForHashtagsFollowers(status: Status, on context: ExecutionContext) async throws {
+        let userBlockedUsersService = context.services.userBlockedUsersService
+        let userBlockedDomainsService = context.services.userBlockedDomainsService
+        let size = 100
+        var page = 0
+
+        // Hashtag followers mechanism should work only for public statuses.
+        guard status.visibility == .public else {
+            return
+        }
+
+        // The function should operate only on the main/original status.
+        guard status.$reblog.id == nil, status.$replyToStatus.id == nil else {
+            context.logger.warning("Status '\(status.stringId() ?? "")' is not the main/original status. Hashtag followers timeline skipped.")
+            return
+        }
+
+        let statusId = try status.requireID()
+        let hashtags = try await StatusHashtag.query(on: context.db)
+            .filter(\.$status.$id == statusId)
+            .all()
+
+        let hashtagsNormalized = Array(Set(hashtags.map(\.hashtagNormalized)))
+        if hashtagsNormalized.isEmpty {
+            return
+        }
+
+        let statusUser = try await User.query(on: context.db)
+            .filter(\.$id == status.$user.id)
+            .first()
+
+        var processedFollowerIds: Set<Int64> = []
+
+        while true {
+            let result = try await UserFollowedHashtag.query(on: context.db)
+                .filter(\.$hashtagNormalized ~~ hashtagsNormalized)
+                .join(User.self, on: \UserFollowedHashtag.$user.$id == \User.$id)
+                .filter(User.self, \.$isLocal == true)
+                .sort(\.$id, .ascending)
+                .paginate(PageRequest(page: page, per: size))
+
+            if result.items.isEmpty {
+                break
+            }
+
+            for userFollowedHashtag in result.items {
+                let followerId = userFollowedHashtag.$user.id
+
+                if processedFollowerIds.contains(followerId) {
+                    continue
+                }
+
+                processedFollowerIds.insert(followerId)
+                var shouldAddToUserTimeline = true
+
+                let userMute = try await self.getUserMute(userId: followerId, mutedUserId: status.$user.id, on: context)
+
+                // We shoudn't add status if user is muting statuses from that user.
+                if userMute.muteStatuses == true {
+                    shouldAddToUserTimeline = false
+                }
+
+                // We shoudn't add status if it's regular status and user is blocked from that user.
+                let isUserBlocked = try await userBlockedUsersService.exists(userId: followerId,
+                                                                             blockedUserId: status.$user.id,
+                                                                             on: context.db)
+                if isUserBlocked {
+                    shouldAddToUserTimeline = false
+                }
+
+                if let statusUser {
+                    if let userUrl = URL(string: statusUser.activityPubProfile) {
+                        let isStatusUserDomainBlocked = try await userBlockedDomainsService.exists(userId: followerId,
+                                                                                                    url: userUrl,
+                                                                                                    on: context.db)
+                        if isStatusUserDomainBlocked {
+                            shouldAddToUserTimeline = false
+                        }
+                    }
+                }
+
+                // Add to timeline only when picture has not been visible in the user's timeline before.
+                let alreadyExistsInUserTimeline = await self.alreadyExistsInUserTimeline(userId: followerId, status: status, on: context)
+                if alreadyExistsInUserTimeline {
+                    shouldAddToUserTimeline = false
+                }
+
+                if shouldAddToUserTimeline {
+                    let newUserStatusId = context.application.services.snowflakeService.generate()
+                    let userStatus = UserStatus(id: newUserStatusId,
+                                                type: .hashtag,
+                                                userId: followerId,
+                                                statusId: statusId)
+
+                    try await userStatus.create(on: context.application.db)
+                }
+            }
+
+            page += 1
+        }
+    }
+    
     public func reblogged(statusId: Int64, linkableParams: LinkableParams, on context: ExecutionContext) async throws -> LinkableResult<User> {
         var queryBuilder = Status.query(on: context.db)
             .with(\.$user) { user in
@@ -2164,7 +2342,7 @@ final class StatusesService: StatusesServiceType {
 
     func can(view status: Status, userId: Int64?, on context: ExecutionContext) async throws -> Bool {
         // These statuses can see all of the people over the internet.
-        if status.visibility == .public || status.visibility == .followers {
+        if [.public, .followers, .quietPublic].contains(status.visibility) {
             return true
         }
 
@@ -3111,8 +3289,8 @@ final class StatusesService: StatusesServiceType {
 
         let size = 100
         var page = 0
-
-        // We have to download ancestors when favourited is comment (in notifications screen we can show main photo which is favourited).
+        
+        // We have to download ancestors when status is comment (in notifications screen we can show main photo which is favourited).
         let ancestors = try await statusesService.ancestors(for: status.requireID(), on: context.db)
 
         // We have to iterate by boosts and send update notifications.
