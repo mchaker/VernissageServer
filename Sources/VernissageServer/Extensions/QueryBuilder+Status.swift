@@ -6,6 +6,7 @@
 
 import Vapor
 import Fluent
+import SQLKit
 
 extension QueryBuilder<Status> {
     func filter(id: Int64?) -> Self {
@@ -14,5 +15,13 @@ extension QueryBuilder<Status> {
         }
         
         return self.filter(\.$id == id)
+    }
+
+    func filter(note query: String) -> Self {
+        if let sqlDatabase = self.database as? SQLDatabase, sqlDatabase.dialect.name == "postgresql" {
+            return self.filter(\.$note, .custom("ILIKE"), "%\(query)%")
+        }
+
+        return self.filter(\.$note ~~ query)
     }
 }
