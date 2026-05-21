@@ -3079,9 +3079,17 @@ final class StatusesService: StatusesServiceType {
             throw AttachmentError.createResizedImageFailed
         }
         
+        // Read Exif orientation.
+        let orientation = ImageOrientation(fileUrl: tmpOriginalFileUrl, on: context.application)
+
+        // Rotate based on orientation before creating the resized copy.
+        guard let rotatedImage = image.rotate(basedOn: orientation) else {
+            throw AttachmentError.imageRotationFailed
+        }
+        
         // Resize image.
         context.logger.info("Resizing image '\(attachment.url)'.")
-        guard let resized = image.resizedTo(width: 800) else {
+        guard let resized = rotatedImage.resizedTo(width: 800) else {
             throw AttachmentError.imageResizeFailed
         }
         
