@@ -81,6 +81,28 @@ protocol StatusesServiceType: Sendable {
     /// - Returns: The count of statuses or comments.
     /// - Throws: An error if the database query fails.
     func count(onlyComments: Bool, on database: Database) async throws -> Int
+    
+    /// Returns number of seconds user has to wait before creating a new status according to anti-flood limits.
+    ///
+    /// - Parameters:
+    ///   - userId: The user identifier.
+    ///   - isSilent: `true` for silent status creation mode, `false` for regular mode.
+    ///   - isComment: `true` when new status is a comment (has `replyToStatusId`), `false` otherwise.
+    ///   - context: The execution context for database and services.
+    /// - Returns: Number of seconds to wait. `0` means creating a new status is allowed now.
+    /// - Throws: An error if the database query fails.
+    func antiFloodSecondsToWait(userId: Int64, isSilent: Bool, isComment: Bool, on context: ExecutionContext) async throws -> Double
+
+    /// Checks whether user is allowed to add a new status based on anti-flood limits.
+    ///
+    /// - Parameters:
+    ///   - userId: The user identifier.
+    ///   - isSilent: `true` for silent status creation mode, `false` for regular mode.
+    ///   - isComment: `true` when new status is a comment (has `replyToStatusId`), `false` otherwise.
+    ///   - context: The execution context for database and services.
+    /// - Returns: `true` when creating a new status is allowed, otherwise `false`.
+    /// - Throws: An error if the database query fails.
+    func isAntiFloodLimitSatisfied(userId: Int64, isSilent: Bool, isComment: Bool, on context: ExecutionContext) async throws -> Bool
 
     /// Counts statuses pinned by the given user and eligible for ActivityPub `featured` collection.
     ///
@@ -189,10 +211,11 @@ protocol StatusesServiceType: Sendable {
     /// - Parameters:
     ///   - noteDto: The NoteDto containing status information.
     ///   - userId: The user identifier creating the status.
+    ///   - visibility: Explicit status visibility parsed from ActivityPub addressing.
     ///   - context: The execution context for database and services.
     /// - Returns: The created Status.
     /// - Throws: An error if creation fails.
-    func create(basedOn noteDto: NoteDto, userId: Int64, on context: ExecutionContext) async throws -> Status
+    func create(basedOn noteDto: NoteDto, userId: Int64, visibility: StatusVisibility, on context: ExecutionContext) async throws -> Status
     
     /// Creates a new status based on a StatusRequestDto.
     ///
@@ -240,6 +263,15 @@ protocol StatusesServiceType: Sendable {
     ///   - context: The execution context for database and services.
     /// - Throws: An error if the operation fails.
     func createOnLocalTimelineForHashtagsFollowers(status: Status, on context: ExecutionContext) async throws
+    
+    /// Creates status entries on the local timeline for explicitly mentioned local users.
+    ///
+    /// - Parameters:
+    ///   - userIds: Local user identifiers that should receive the status.
+    ///   - status: The status to propagate.
+    ///   - context: The execution context for database and services.
+    /// - Throws: An error if the operation fails.
+    func createOnLocalTimeline(mentionedUsers userIds: [Int64], status: Status, on context: ExecutionContext) async throws
     
     /// Converts a status to a Data Transfer Object (DTO).
     ///
@@ -575,6 +607,48 @@ final class StatusesService: StatusesServiceType {
         
         return try await query.count()
     }
+    
+    func antiFloodSecondsToWait(userId: Int64, isSilent: Bool, isComment: Bool, on context: ExecutionContext) async throws -> Double {
+        if isComment {
+            return 0
+        }
+
+        let applicationSettings = context.settings.cached
+        let minimumSecondsBetweenRegularStatuses = applicationSettings?.minimumSecondsBetweenRegularStatuses ?? 60
+        let minimumSecondsBetweenSilentStatuses = applicationSettings?.minimumSecondsBetweenSilentStatuses ?? 1
+        let minimumSecondsBetweenNewStatuses = isSilent ? minimumSecondsBetweenSilentStatuses : minimumSecondsBetweenRegularStatuses
+
+        // Value <= 0 means that anti-flood limit is disabled.
+        if minimumSecondsBetweenNewStatuses <= 0 {
+            return 0
+        }
+
+        if let latestStatus = try await Status.query(on: context.db)
+            .filter(\.$user.$id == userId)
+            .filter(\.$replyToStatus.$id == nil)
+            .sort(\.$createdAt, .descending)
+            .first(),
+           let latestStatusCreatedAt = latestStatus.createdAt {
+            let timeIntervalFromLastStatus = Date().timeIntervalSince(latestStatusCreatedAt)
+            let remainingTimeInterval = TimeInterval(minimumSecondsBetweenNewStatuses) - timeIntervalFromLastStatus
+
+            guard remainingTimeInterval > 0 else {
+                return 0
+            }
+
+            return remainingTimeInterval
+        }
+
+        return 0
+    }
+
+    func isAntiFloodLimitSatisfied(userId: Int64, isSilent: Bool, isComment: Bool, on context: ExecutionContext) async throws -> Bool {
+        let antiFloodSecondsToWait = try await self.antiFloodSecondsToWait(userId: userId,
+                                                                           isSilent: isSilent,
+                                                                           isComment: isComment,
+                                                                           on: context)
+        return antiFloodSecondsToWait <= 0
+    }
 
     func countFeatured(userId: Int64, on database: Database) async throws -> Int {
         return try await self.featuredBaseQuery(userId: userId, on: database).count()
@@ -614,7 +688,7 @@ final class StatusesService: StatusesServiceType {
     private func featuredBaseQuery(userId: Int64, on database: Database) -> QueryBuilder<Status> {
         return Status.query(on: database)
             .filter(\.$user.$id == userId)
-            .filter(\.$visibility == .public)
+            .filter(\.$visibility ~~ [.public, .quietPublic])
             .filter(\.$replyToStatus.$id == nil)
             .filter(\.$reblog.$id == nil)
             .filter(\.$pinnedAt != nil)
@@ -779,6 +853,9 @@ final class StatusesService: StatusesServiceType {
                     try await userStatus.create(on: context.application.db)
                 }
             }
+        case .quietPublic:
+            // Quiet public statuses are visible only on user's profile.
+            break
         }
     }
     
@@ -791,7 +868,7 @@ final class StatusesService: StatusesServiceType {
         try await sendUpdateNotifications(for: status, on: context)
                 
         switch status.visibility {
-        case .public, .followers:            
+        case .public, .quietPublic, .followers:
             // Update statuses (with images) on remote followers timeline.
             try await self.scheduleStatusSend(status: status,
                                               mainStatus: nil,
@@ -810,7 +887,7 @@ final class StatusesService: StatusesServiceType {
         }
         
         switch status.visibility {
-        case .public, .followers:
+        case .public, .quietPublic, .followers:
             // Create reblogged statuses on local followers timeline.
             try await self.createOnLocalTimeline(followersOf: status.user.requireID(), status: status, on: context)
             
@@ -830,7 +907,7 @@ final class StatusesService: StatusesServiceType {
         }
         
         switch orginalStatus.visibility {
-        case .public, .followers:
+        case .public, .quietPublic, .followers:
             try await self.scheduleUnannounceSend(activityPubUnreblog: activityPubUnreblog, on: context)
         case .mentioned:
             break
@@ -843,7 +920,7 @@ final class StatusesService: StatusesServiceType {
         }
 
         switch status.visibility {
-        case .public:
+        case .public, .quietPublic:
             try await self.scheduleCollectionSend(status: status, type: .pin, on: context)
         case .followers, .mentioned:
             break
@@ -856,7 +933,7 @@ final class StatusesService: StatusesServiceType {
         }
 
         switch status.visibility {
-        case .public:
+        case .public, .quietPublic:
             try await self.scheduleCollectionSend(status: status, type: .unpin, on: context)
         case .followers, .mentioned:
             break
@@ -877,7 +954,7 @@ final class StatusesService: StatusesServiceType {
         }
                 
         switch statusFavourite.status.visibility {
-        case .public, .followers:
+        case .public, .quietPublic, .followers:
             // Create favourite statuses on remote servers.
             try await self.scheduleFavouriteSend(statusFavourite: statusFavourite, on: context)
         case .mentioned:
@@ -904,7 +981,7 @@ final class StatusesService: StatusesServiceType {
         }
                 
         switch status.visibility {
-        case .public, .followers:
+        case .public, .quietPublic, .followers:
             // Create favourite statuses on remote servers.
             try await self.scheduleUnfavouriteSend(statusFavouriteId: statusFavouriteDto.statusFavouriteId, user: user, status: status, on: context)
         case .mentioned:
@@ -912,7 +989,7 @@ final class StatusesService: StatusesServiceType {
         }
     }
 
-    func create(basedOn noteDto: NoteDto, userId: Int64, on context: ExecutionContext) async throws -> Status {
+    func create(basedOn noteDto: NoteDto, userId: Int64, visibility: StatusVisibility, on context: ExecutionContext) async throws -> Status {
         
         // First we need to check if status with same activityPubId already exists in the database.
         let statusFromDatabase = try await self.get(activityPubId: noteDto.id, on: context.db)
@@ -963,7 +1040,7 @@ final class StatusesService: StatusesServiceType {
                             activityPubUrl: noteDto.url,
                             application: nil,
                             categoryId: category?.id,
-                            visibility: replyToStatus?.visibility ?? .public,
+                            visibility: visibility,
                             sensitive: noteDto.sensitive ?? false,
                             contentWarning: noteDto.summary,
                             replyToStatusId: replyToStatus?.id,
@@ -1040,19 +1117,9 @@ final class StatusesService: StatusesServiceType {
             throw error
         }
         
-        // We can add notification to user about new comment/mention.
-        if let replyToStatus, let statusFromDatabase = try await self.get(id: status.requireID(), on: context.application.db) {
-            // We have to download ancestors when favourited is comment (in notifications screen we can show main photo which is commented).
-            let mainStatus = try await self.getMainStatus(for: statusFromDatabase.id, on: context.db)
-            
-            let notificationsService = context.application.services.notificationsService
-            try await notificationsService.create(type: .newComment,
-                                                  to: replyToStatus.user,
-                                                  by: statusFromDatabase.user.requireID(),
-                                                  statusId: replyToStatus.requireID(),
-                                                  mainStatusId: mainStatus?.id,
-                                                  on: context)
-
+        // We can add notification to status owner about new comment.
+        if let replyToStatus, let statusFromDatabase = try await self.get(id: newStatusId, on: context.application.db) {
+            try await self.notifyOwnerAboutComment(toStatusId: replyToStatus.requireID(), by: statusFromDatabase.user.requireID(), on: context)
             context.logger.info("Notification (mention) about new comment to user '\(replyToStatus.user.activityPubProfile)' added to database.")
         }
         
@@ -1657,6 +1724,30 @@ final class StatusesService: StatusesServiceType {
             }
 
             page += 1
+        }
+    }
+    
+    func createOnLocalTimeline(mentionedUsers userIds: [Int64], status: Status, on context: ExecutionContext) async throws {
+        let statusId = try status.requireID()
+        let uniqueUserIds = Set(userIds)
+
+        for userId in uniqueUserIds where userId != status.$user.id {
+            let alreadyExists = try await UserStatus.query(on: context.db)
+                .filter(\.$status.$id == statusId)
+                .filter(\.$user.$id == userId)
+                .first() != nil
+
+            if alreadyExists {
+                continue
+            }
+
+            let newUserStatusId = context.services.snowflakeService.generate()
+            let userStatus = UserStatus(id: newUserStatusId,
+                                        type: .mention,
+                                        userId: userId,
+                                        statusId: statusId)
+
+            try await userStatus.create(on: context.db)
         }
     }
     
@@ -2275,7 +2366,7 @@ final class StatusesService: StatusesServiceType {
     
     func can(view status: Status, userId: Int64?, on context: ExecutionContext) async throws -> Bool {
         // These statuses can see all of the people over the internet.
-        if status.visibility == .public || status.visibility == .followers {
+        if [.public, .quietPublic].contains(status.visibility) {
             return true
         }
         
@@ -2627,7 +2718,7 @@ final class StatusesService: StatusesServiceType {
         var query = Status.query(on: context.db)
             .group(.or) { group in
                 group
-                    .filter(\.$visibility ~~ [.public])
+                    .filter(\.$visibility ~~ [.public, .quietPublic])
                     .filter(\.$user.$id == userId)
             }
             .sort(\.$createdAt, .descending)
@@ -2675,7 +2766,7 @@ final class StatusesService: StatusesServiceType {
     
     func statuses(linkableParams: LinkableParams, on context: ExecutionContext) async throws -> LinkableResult<Status> {
         var query = Status.query(on: context.db)
-            .filter(\.$visibility ~~ [.public])
+            .filter(\.$visibility ~~ [.public, .quietPublic])
             .sort(\.$createdAt, .descending)
             .with(\.$attachments) { attachment in
                 attachment.with(\.$originalFile)
@@ -2988,9 +3079,17 @@ final class StatusesService: StatusesServiceType {
             throw AttachmentError.createResizedImageFailed
         }
         
+        // Read Exif orientation.
+        let orientation = ImageOrientation(fileUrl: tmpOriginalFileUrl, on: context.application)
+
+        // Rotate based on orientation before creating the resized copy.
+        guard let rotatedImage = image.rotate(basedOn: orientation) else {
+            throw AttachmentError.imageRotationFailed
+        }
+        
         // Resize image.
         context.logger.info("Resizing image '\(attachment.url)'.")
-        guard let resized = image.resizedTo(width: 800) else {
+        guard let resized = rotatedImage.resizedTo(width: 800) else {
             throw AttachmentError.imageResizeFailed
         }
         

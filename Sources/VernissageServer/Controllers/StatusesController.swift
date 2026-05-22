@@ -327,8 +327,23 @@ struct StatusesController {
     /// Visibility is one of following value:
     ///
     /// - `public` - status visible for all users
+    /// - `quietPublic` - status visible only on user's profile (not federated)
     /// - `followers` - status visible only for followers
     /// - `mentioned` - status visible only for mentioned users
+    ///
+    /// Tip for import statuses:
+    ///
+    /// - `visibility` - when set to `quietPublic`, status is not sent to timelines of other users
+    ///   and is not federated by ActivityPub. This mode is especially useful when adding historical images
+    ///   manually or via import tools designed for external import scenarios, such as Instagram,
+    ///   Pixelfed, Flickr, 500px, or Glass.
+    ///
+    /// Status creation is additionally protected by two system settings:
+    ///
+    /// - `minimumSecondsBetweenRegularStatuses` (default: `60`) for regular statuses (`visibility=public`)
+    /// - `minimumSecondsBetweenSilentStatuses` (default: `1`) for silent statuses (`visibility=quietPublic`)
+    ///
+    /// Setting any of these values to `0` (or less) disables the anti-flood limit for that mode.
     ///
     /// > Important: Endpoint URL: `/api/v1/statuses`.
     ///
@@ -450,9 +465,12 @@ struct StatusesController {
     /// - Throws: `EntityNotFoundError.statusNotFound` if status not exists.
     /// - Throws: `StatusError.incorrectAttachmentId` if incorrect attachment id.
     /// - Throws: `EntityNotFoundError.attachmentNotFound` if attachment not exists.
+    /// - Throws: `StatusError.statusCreationTooFrequent` if previous status has been added too recently.
     @Sendable
     func create(request: Request) async throws -> Response {
         let authorizationPayloadId = try request.requireUserId()
+        let applicationSettings = request.application.settings.cached
+        let statusesService = request.application.services.statusesService
 
         guard let user = try await User.query(on: request.db).filter(\.$id == authorizationPayloadId).first() else {
             throw EntityNotFoundError.userNotFound
@@ -479,20 +497,29 @@ struct StatusesController {
                 throw EntityNotFoundError.statusNotFound
             }
         }
+
+        // Verify the anty-flood intervals (there is a minimum interval between adding new statuses by same user).
+        let isSilent = statusRequestDto.visibility == .quietPublic
+        let isComment = statusRequestDto.replyToStatusId?.toId() != nil
+        let antiFloodSecondsToWait = try await statusesService.antiFloodSecondsToWait(userId: authorizationPayloadId,
+                                                                                      isSilent: isSilent,
+                                                                                      isComment: isComment,
+                                                                                      on: request.executionContext)
+        if antiFloodSecondsToWait > 0 {
+            throw StatusError.statusCreationTooFrequent(antiFloodSecondsToWait)
+        }
         
         // Check maximum limit of attachments attached to status.
-        let applicationSettings = request.application.settings.cached
         let maxMediaAttachments = applicationSettings?.maxMediaAttachments ?? Constants.statusMaxMediaAttachments
         guard statusRequestDto.attachmentIds.count <= maxMediaAttachments else {
             throw StatusError.maxLimitOfAttachmentsExceeded
         }
         
         // Create new status in database.
-        let statusesService = request.application.services.statusesService
         let statusFromDatabase = try await statusesService.create(basedOn: statusRequestDto, user: user, on: request)
         
         // Send new status to user's timelines in async queue job (also in remote servers).
-        if let statusId = statusFromDatabase.id {
+        if isSilent == false, let statusId = statusFromDatabase.id {
             try await request
                 .queues(.statusSender)
                 .dispatch(StatusCreaterJob.self, statusId, maxRetryCount: 2)
@@ -607,8 +634,6 @@ struct StatusesController {
     /// - Throws: `EntityForbiddenError.statusForbidden` if access to status is forbidden.
     @Sendable
     func read(request: Request) async throws -> StatusDto {
-        let authorizationPayloadId = request.userId
-
         guard let statusIdString = request.parameters.get("id", as: String.self) else {
             throw StatusError.incorrectStatusId
         }
@@ -617,7 +642,7 @@ struct StatusesController {
             throw StatusError.incorrectStatusId
         }
         
-        if let authorizationPayloadId {
+        if let authorizationPayloadId = request.userId {
             let status = try await Status.query(on: request.db)
                 .filter(\.$id == statusId)
                 .with(\.$attachments) { attachment in
@@ -650,7 +675,7 @@ struct StatusesController {
         } else {
             let status = try await Status.query(on: request.db)
                 .filter(\.$id == statusId)
-                .filter(\.$visibility ~~ [.public])
+                .filter(\.$visibility ~~ [.public, .quietPublic])
                 .with(\.$attachments) { attachment in
                     attachment.with(\.$originalFile)
                     attachment.with(\.$smallFile)
@@ -1688,7 +1713,7 @@ struct StatusesController {
         let status = try await statusesService.get(id: statusId, on: request.db)
         
         // Visible for authorized or public statuses.
-        if request.userId == nil && status?.visibility != .public {
+        if request.userId == nil && [.public, .quietPublic].contains(status?.visibility) == false {
             throw Abort(.unauthorized)
         }
         
@@ -2039,7 +2064,7 @@ struct StatusesController {
         let status = try await statusesService.get(id: statusId, on: request.db)
         
         // Visible for authorized or public statuses.
-        if request.userId == nil && status?.visibility != .public {
+        if request.userId == nil && [.public, .quietPublic].contains(status?.visibility) == false {
             throw Abort(.unauthorized)
         }
         
@@ -2370,7 +2395,7 @@ struct StatusesController {
             throw EntityForbiddenError.statusForbidden
         }
 
-        guard status.visibility == .public else {
+        guard [.public, .quietPublic].contains(status.visibility) else {
             throw StatusError.cannotPinNonPublicStatus
         }
 
@@ -2565,6 +2590,10 @@ struct StatusesController {
         let statusFromDatabaseBeforeFeature = try await statusesService.get(id: statusId, on: request.db)
         guard let statusFromDatabaseBeforeFeature else {
             throw EntityNotFoundError.statusNotFound
+        }
+
+        guard [.public, .quietPublic].contains(statusFromDatabaseBeforeFeature.visibility) else {
+            throw EntityForbiddenError.statusForbidden
         }
         
         // We have to verify if user have access to the status (it's not only for mentioned).

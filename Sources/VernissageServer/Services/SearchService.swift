@@ -227,11 +227,11 @@ final class SearchService: SearchServiceType {
             .group(.or) { group in
                 group
                     .filter(id: id)
-                    .filter(\.$note ~~ query)
+                    .filter(note: query)
                     .filter(\.$activityPubId == query)
                     .filter(\.$activityPubUrl == query)
             }
-            .filter(\.$visibility == .public)
+            .filter(\.$visibility ~~ [.public, .quietPublic])
             .filter(\.$replyToStatus.$id == nil)
             .with(\.$user)
             .with(\.$attachments) { attachment in

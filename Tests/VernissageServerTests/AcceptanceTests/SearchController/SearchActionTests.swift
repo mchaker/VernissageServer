@@ -119,6 +119,29 @@ extension ControllersTests {
             #expect(searchResultDto.statuses != nil, "Hashtags should be returned.")
             #expect((searchResultDto.statuses?.count ?? 0) >= 3, "At least two statuses should be returned by the search.")
         }
+
+        @Test
+        func `Search result should be returned when existing status has different letter case`() async throws {
+            // Arrange.
+            let user = try await application.createUser(userName: "casefinder")
+
+            let (_, attachments) = try await application.createStatuses(user: user, notePrefix: "Mixed CASE note", amount: 1)
+            defer {
+                application.clearFiles(attachments: attachments)
+            }
+
+            // Act.
+            let searchResultDto = try await application.getResponse(
+                as: .user(userName: "casefinder", password: "p@ssword"),
+                to: "/search?query=mixed%20case&type=statuses",
+                version: .v1,
+                decodeTo: SearchResultDto.self
+            )
+
+            // Assert.
+            #expect(searchResultDto.statuses?.contains(where: { $0.note?.contains("Mixed CASE note") == true }) == true,
+                    "Status should be returned by case-insensitive search.")
+        }
         
         @Test
         func `Empty search result should be returned when local account has not found`() async throws {

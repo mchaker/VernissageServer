@@ -5,10 +5,9 @@
 //
 
 import Vapor
-import ExtendedError
 
 /// Errors returned during status operations.
-enum StatusError: String, Error {
+enum StatusError: Error {
     case incorrectStatusId
     case attachmentsAreRequired
     case incorrectAttachmentId
@@ -25,6 +24,7 @@ enum StatusError: String, Error {
     case sortColumnNotSupported
     case incorrectStatusEventId
     case maxLimitOfAttachmentsExceeded
+    case statusCreationTooFrequent(Double)
 }
 
 extension StatusError: LocalizedTerminateError {
@@ -32,6 +32,8 @@ extension StatusError: LocalizedTerminateError {
         switch self {
         case .accountHasBeenMoved, .emailNotVerified, .cannotReblogMentionedStatus, .cannotReblogComments, .cannotUpdateOtherUserStatus, .maxLimitOfAttachmentsExceeded, .cannotPinNonPublicStatus, .cannotPinComment, .cannotPinReblog:
             return .forbidden
+        case .statusCreationTooFrequent:
+            return .tooManyRequests
         case .cannotDeleteStatus:
             return .internalServerError
         default:
@@ -57,14 +59,55 @@ extension StatusError: LocalizedTerminateError {
         case .sortColumnNotSupported: return "Sort column is not supported."
         case .incorrectStatusEventId: return "Incorrect status event id."
         case .maxLimitOfAttachmentsExceeded: return "Maximum limit of attachments exceeded"
+        case .statusCreationTooFrequent(let waitSeconds):
+            let formattedWaitTime = Self.formatWaitSeconds(waitSeconds)
+            return "New status cannot be created yet. Please wait \(formattedWaitTime) seconds before adding another one."
         }
     }
 
+    var parameters: [String : String]? {
+        switch self {
+        case .statusCreationTooFrequent(let waitSeconds):
+            let formattedWaitTime = Self.formatWaitSeconds(waitSeconds)
+            return ["waitSeconds": formattedWaitTime]
+        default: return nil
+        }
+    }
+    
     var identifier: String {
         return "status"
     }
 
     var code: String {
-        return self.rawValue
+        switch self {
+        case .incorrectStatusId: return "incorrectStatusId"
+        case .attachmentsAreRequired: return "attachmentsAreRequired"
+        case .incorrectAttachmentId: return "incorrectAttachmentId"
+        case .emailNotVerified: return "emailNotVerified"
+        case .accountHasBeenMoved: return "accountHasBeenMoved"
+        case .cannotReblogMentionedStatus: return "cannotReblogMentionedStatus"
+        case .cannotReblogComments: return "cannotReblogComments"
+        case .cannotAddCommentWithoutCommentedStatus: return "cannotAddCommentWithoutCommentedStatus"
+        case .cannotDeleteStatus: return "cannotDeleteStatus"
+        case .cannotUpdateOtherUserStatus: return "cannotUpdateOtherUserStatus"
+        case .cannotPinNonPublicStatus: return "cannotPinNonPublicStatus"
+        case .cannotPinComment: return "cannotPinComment"
+        case .cannotPinReblog: return "cannotPinReblog"
+        case .sortColumnNotSupported: return "sortColumnNotSupported"
+        case .incorrectStatusEventId: return "incorrectStatusEventId"
+        case .maxLimitOfAttachmentsExceeded: return "maxLimitOfAttachmentsExceeded"
+        case .statusCreationTooFrequent: return "statusCreationTooFrequent"
+        }
+    }
+
+    private static func formatWaitSeconds(_ waitSeconds: Double) -> String {
+        let nonNegativeWaitSeconds = max(waitSeconds, 0)
+
+        if nonNegativeWaitSeconds > 10 {
+            return String(Int(nonNegativeWaitSeconds.rounded(.up)))
+        }
+
+        let roundedToTenths = (nonNegativeWaitSeconds * 10).rounded(.up) / 10
+        return String(format: "%.1f", roundedToTenths)
     }
 }
