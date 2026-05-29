@@ -20,13 +20,13 @@ final class MockActivityPubDownloadService: ActivityPubDownloadServiceType {
         return try await activityPubDownloadService.downloadStatusSuppressingErrors(activityPubId: activityPubId, on: context)
     }
 
-    func getRemoteUserFromLocalDatabaseFirst(userName: String, on context: VernissageServer.ExecutionContext) async throws -> VernissageServer.User? {
+    func downloadRemoteUserIfMissing(userName: String, on context: VernissageServer.ExecutionContext) async throws -> VernissageServer.User? {
         return nil
     }
 
-    func getRemoteUserWithCacheVerification(activityPubProfile: String, on context: VernissageServer.ExecutionContext) async throws -> VernissageServer.User? {
+    func downloadRemoteUserIfNeeded(activityPubProfile: String, on context: VernissageServer.ExecutionContext) async throws -> VernissageServer.User? {
         let activityPubDownloadService = ActivityPubDownloadService()
-        return try await activityPubDownloadService.getRemoteUserWithCacheVerification(activityPubProfile: activityPubProfile, on: context)
+        return try await activityPubDownloadService.downloadRemoteUserIfNeeded(activityPubProfile: activityPubProfile, on: context)
     }
 
     func downloadPerson(activityPubProfile: String, on context: VernissageServer.ExecutionContext) async throws -> ActivityPubKit.PersonDto {
@@ -39,15 +39,15 @@ final class MockActivityPubDownloadService: ActivityPubDownloadServiceType {
         return try await activityPubDownloadService.refreshRemoteUser(activityPubProfile: activityPubProfile, on: context)
     }
 
-    func getRemoteActivityPubProfile(userName: String, on context: VernissageServer.ExecutionContext) async -> String? {
+    func resolveActivityPubProfile(userName: String, on context: VernissageServer.ExecutionContext) async -> String? {
         let name = userName.split(separator: "@").first
         let domain = userName.split(separator: "@").last
 
         return "https://\(domain ?? "example.com")/users/\(name ?? "user")}"
     }
 
-    func getActivityPubProfile(userName: String, baseUrl: URL, on context: VernissageServer.ExecutionContext) async -> String? {
+    func resolveActivityPubProfile(userName: String, baseUrl: URL, on context: VernissageServer.ExecutionContext) async -> String? {
         let activityPubDownloadService = ActivityPubDownloadService()
-        return await activityPubDownloadService.getActivityPubProfile(userName: userName, baseUrl: baseUrl, on: context)
+        return await activityPubDownloadService.resolveActivityPubProfile(userName: userName, baseUrl: baseUrl, on: context)
     }
 }
