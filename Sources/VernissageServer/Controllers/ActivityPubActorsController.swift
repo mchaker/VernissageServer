@@ -9,34 +9,34 @@ import ActivityPubKit
 import Fluent
 
 extension ActivityPubActorsController: RouteCollection {
-    
+
     @_documentation(visibility: private)
     static let uri: PathComponent = .constant("actors")
-    
+
     func boot(routes: RoutesBuilder) throws {
         let activityPubGroup = routes.grouped(ActivityPubActorsController.uri)
         let statusesGroup = routes.grouped(StatusesController.uri)
-        
+
         activityPubGroup
             .grouped(EventHandlerMiddleware(.activityPubRead))
             .grouped(CacheControlMiddleware(.noStore))
             .get(":name", use: read)
-        
+
         activityPubGroup
             .grouped(EventHandlerMiddleware(.activityPubInbox))
             .grouped(CacheControlMiddleware(.noStore))
             .post(":name", "inbox", use: inbox)
-        
+
         activityPubGroup
             .grouped(EventHandlerMiddleware(.activityPubOutbox))
             .grouped(CacheControlMiddleware(.noStore))
             .post(":name", "outbox", use: outbox)
-        
+
         activityPubGroup
             .grouped(EventHandlerMiddleware(.activityPubFollowing))
             .grouped(CacheControlMiddleware(.noStore))
             .get(":name", "following", use: following)
-        
+
         activityPubGroup
             .grouped(EventHandlerMiddleware(.activityPubFollowers))
             .grouped(CacheControlMiddleware(.noStore))
@@ -51,7 +51,7 @@ extension ActivityPubActorsController: RouteCollection {
             .grouped(EventHandlerMiddleware(.activityPubRead))
             .grouped(CacheControlMiddleware(.noStore))
             .get(":name", "alsoKnownAs", use: alsoKnownAs)
-        
+
         // Support for: https://example.com/actors/@johndoe/statuses/:id
         activityPubGroup
             .grouped(EventHandlerMiddleware(.activityPubStatus))
@@ -63,7 +63,7 @@ extension ActivityPubActorsController: RouteCollection {
             .grouped(EventHandlerMiddleware(.activityPubStatus))
             .grouped(CacheControlMiddleware(.noStore))
             .get(":name", ":id", use: status)
-        
+
         // Support for: https://example.com/statuses/:id
         statusesGroup
             .grouped(EventHandlerMiddleware(.activityPubStatus))
@@ -79,7 +79,7 @@ extension ActivityPubActorsController: RouteCollection {
 /// > Important: Base controller URL: `/api/v1/actors`.
 struct ActivityPubActorsController {
     private let orderedCollectionSize = 10
-    
+
     /// Returns user ActivityPub profile.
     ///
     /// Endpoint for download Activity Pub actor's data. One of the property is public key which should be used to validate requests
@@ -183,15 +183,15 @@ struct ActivityPubActorsController {
         let usersService = request.application.services.usersService
         let clearedUserName = userName.deletingPrefix("@")
         let userFromDb = try await usersService.get(userName: clearedUserName, on: request.db)
-        
+
         guard let user = userFromDb else {
             throw EntityNotFoundError.userNotFound
         }
-        
+
         let personDto = try await usersService.getPersonDto(for: user, on: request.executionContext)
         return try await personDto.encodeActivityResponse(for: request)
     }
-        
+
     /// User ActivityPub inbox.
     ///
     /// In the ActivityPub protocol, the actor's inbox serves as a crucial component for enabling communication
@@ -217,14 +217,15 @@ struct ActivityPubActorsController {
     /// - Throws: `ActivityPubError.userNameIsRequired` if user name is not specified.
     @Sendable
     func inbox(request: Request) async throws -> HTTPStatus {
-        let activityPubService = request.application.services.activityPubService
+        let instanceBlockedDomainsService = request.application.services.instanceBlockedDomainsService
+        let instanceBlockedUsersService = request.application.services.instanceBlockedUsersService
 
         // Log into file the ActivityPub request.
         request.logger.info("\(request.headers.description)")
         if let bodyString = request.body.string {
             request.logger.info("\(bodyString)")
         }
-        
+
         guard let userName = request.parameters.get("name") else {
             throw ActivityPubError.userNameIsRequired
         }
@@ -235,19 +236,19 @@ struct ActivityPubActorsController {
                                    metadata: [Constants.requestMetadata: request.body.bodyValue.loggerMetadata()])
             return HTTPStatus.ok
         }
-        
+
         // Skip requests from domains blocked by the instance.
-        if try await activityPubService.isDomainBlockedByInstance(activity: activityDto, on: request.executionContext) {
+        if try await instanceBlockedDomainsService.isDomainBlockedByInstance(activity: activityDto, on: request.executionContext) {
             request.logger.info("Activity domain blocked by instance (type: \(activityDto.type), user: '\(userName)', id: '\(activityDto.id)', activityPubProfile: \(activityDto.actor.actorIds().first ?? "")")
             return HTTPStatus.ok
         }
-        
+
         // Skip requests from actors blocked by the instance.
-        if try await activityPubService.isActorBlockedByInstance(activity: activityDto, on: request.executionContext) {
+        if try await instanceBlockedUsersService.isActorBlockedByInstance(activity: activityDto, on: request.executionContext) {
             request.logger.info("Activity actor blocked by instance (type: \(activityDto.type), user: '\(userName)', id: '\(activityDto.id)', activityPubProfile: \(activityDto.actor.actorIds().first ?? "")")
             return HTTPStatus.ok
         }
-        
+
         // Add user activity into queue.
         let bodyHash = request.body.hash()
         request.logger.info("User inbox activity (type: '\(activityDto.type)', user: '\(userName)', id: '\(activityDto.id)', body hash: '\(bodyHash ?? "")').")
@@ -263,10 +264,10 @@ struct ActivityPubActorsController {
         try await request
             .queues(.apUserInbox)
             .dispatch(ActivityPubUserInboxJob.self, activityPubRequest)
-        
+
         return HTTPStatus.ok
     }
-    
+
     /// User ActivityPub outbox,
     ///
     /// In the ActivityPub protocol, the actor outbox serves as a central feature for enabling actors to publish
@@ -292,37 +293,38 @@ struct ActivityPubActorsController {
     /// - Throws: `ActivityPubError.userNameIsRequired` if user name is not specified.
     @Sendable
     func outbox(request: Request) async throws -> HTTPStatus {
-        let activityPubService = request.application.services.activityPubService
+        let instanceBlockedDomainsService = request.application.services.instanceBlockedDomainsService
+        let instanceBlockedUsersService = request.application.services.instanceBlockedUsersService
 
         // Log into file the ActivityPub request.
         request.logger.info("\(request.headers.description)")
         if let bodyString = request.body.string {
             request.logger.info("\(bodyString)")
         }
-        
+
         guard let userName = request.parameters.get("name") else {
             throw ActivityPubError.userNameIsRequired
         }
-        
+
         // Deserialize activity from body.
         guard let activityDto = try request.body.activity() else {
             request.logger.warning("User outbox activity has not be deserialized.",
                                    metadata: [Constants.requestMetadata: request.body.bodyValue.loggerMetadata()])
             return HTTPStatus.ok
         }
-        
+
         // Skip requests from domains blocked by the instance.
-        if try await activityPubService.isDomainBlockedByInstance(activity: activityDto, on: request.executionContext) {
+        if try await instanceBlockedDomainsService.isDomainBlockedByInstance(activity: activityDto, on: request.executionContext) {
             request.logger.info("Activity domain blocked by instance (type: \(activityDto.type), user: '\(userName)', id: '\(activityDto.id)', activityPubProfile: \(activityDto.actor.actorIds().first ?? "")")
             return HTTPStatus.ok
         }
-        
+
         // Skip requests from actors blocked by the instance.
-        if try await activityPubService.isActorBlockedByInstance(activity: activityDto, on: request.executionContext) {
+        if try await instanceBlockedUsersService.isActorBlockedByInstance(activity: activityDto, on: request.executionContext) {
             request.logger.info("Activity actor blocked by instance (type: \(activityDto.type), user: '\(userName)', id: '\(activityDto.id)', activityPubProfile: \(activityDto.actor.actorIds().first ?? "")")
             return HTTPStatus.ok
         }
-        
+
         // Add user activity into queue.
         let bodyHash = request.body.hash()
         request.logger.info("User outbox activity (type: '\(activityDto.type)', user: '\(userName)', id: '\(activityDto.id)', body hash: '\(bodyHash ?? "")').")
@@ -334,14 +336,14 @@ struct ActivityPubActorsController {
                                                        httpMethod: .post,
                                                        httpPath: .userOutbox(userName),
                                                        receivedAt: Date.now)
-        
+
         try await request
             .queues(.apUserOutbox)
             .dispatch(ActivityPubUserOutboxJob.self, activityPubRequest)
 
         return HTTPStatus.ok
     }
-    
+
     /// List of users that are followed by the user.
     ///
     /// In the ActivityPub protocol, the actor following endpoint serves as a means for actors to manage their social
@@ -412,24 +414,24 @@ struct ActivityPubActorsController {
         guard let userName = request.parameters.get("name") else {
             throw ActivityPubError.userNameIsRequired
         }
-        
+
         let usersService = request.application.services.usersService
         let followsService = request.application.services.followsService
-        
+
         guard let user = try await usersService.get(userName: userName, on: request.db) else {
             throw EntityNotFoundError.userNotFound
         }
-        
+
         let page: String? = request.query["page"]
-        
+
         let userId = try user.requireID()
         let totalItems = try await followsService.count(sourceId: userId, on: request.db)
-        
+
         if let page {
             guard let pageInt = Int(page) else {
                 throw Abort(.badRequest)
             }
-            
+
             let following = try await followsService.following(sourceId: userId,
                                                                onlyApproved: true,
                                                                page: pageInt,
@@ -438,7 +440,7 @@ struct ActivityPubActorsController {
 
             let showPrev = pageInt > 1
             let showNext = (pageInt * orderedCollectionSize) < totalItems
-            
+
             let orderedCollectionPageDto =  OrderedCollectionPageDto(id: "\(user.activityPubProfile)/following?page=\(pageInt)",
                                                       totalItems: totalItems,
                                                       prev: showPrev ? "\(user.activityPubProfile)/following?page=\(pageInt - 1)" : nil,
@@ -446,7 +448,7 @@ struct ActivityPubActorsController {
                                                       partOf: "\(user.activityPubProfile)/following",
                                                       orderedItems: .multiple(following.items.map({ ObjectDto(id: $0.activityPubProfile) }))
             )
-            
+
             return try await orderedCollectionPageDto.encodeActivityResponse(for: request)
         } else {
             if totalItems <= orderedCollectionSize {
@@ -465,11 +467,11 @@ struct ActivityPubActorsController {
             let orderedCollectionDto =  OrderedCollectionDto(id: "\(user.activityPubProfile)/following",
                                                              totalItems: totalItems,
                                                              first: "\(user.activityPubProfile)/following?page=1")
-            
+
             return try await orderedCollectionDto.encodeActivityResponse(for: request)
         }
     }
-    
+
     /// List of users that follow the user.
     ///
     /// In the ActivityPub protocol, the actor followers endpoint serves as a means for actors to retrieve
@@ -538,24 +540,24 @@ struct ActivityPubActorsController {
         guard let userName = request.parameters.get("name") else {
             throw ActivityPubError.userNameIsRequired
         }
-        
+
         let usersService = request.application.services.usersService
         let followsService = request.application.services.followsService
-        
+
         guard let user = try await usersService.get(userName: userName, on: request.db) else {
             throw EntityNotFoundError.userNotFound
         }
-        
+
         let page: String? = request.query["page"]
-        
+
         let userId = try user.requireID()
         let totalItems = try await followsService.count(targetId: userId, on: request.db)
-                
+
         if let page {
             guard let pageInt = Int(page) else {
                 throw Abort(.badRequest)
             }
-            
+
             let follows = try await followsService.follows(targetId: userId,
                                                            onlyApproved: true,
                                                            page: pageInt,
@@ -572,7 +574,7 @@ struct ActivityPubActorsController {
                                                                     partOf: "\(user.activityPubProfile)/followers",
                                                                     orderedItems: .multiple(follows.items.map({ ObjectDto(id: $0.activityPubProfile) }))
             )
-            
+
             return try await orderedCollectionPageDto.encodeActivityResponse(for: request)
         } else {
             if totalItems <= orderedCollectionSize {
@@ -591,7 +593,7 @@ struct ActivityPubActorsController {
             let orderedCollectionDto = OrderedCollectionDto(id: "\(user.activityPubProfile)/followers",
                                                             totalItems: totalItems,
                                                             first: "\(user.activityPubProfile)/followers?page=1")
-            
+
             return try await orderedCollectionDto.encodeActivityResponse(for: request)
         }
     }
@@ -680,7 +682,7 @@ struct ActivityPubActorsController {
             return try await orderedCollectionDto.encodeActivityResponse(for: request)
         }
     }
-    
+
     /// Returns actor aliases collection (`alsoKnownAs`).
     ///
     /// Endpoint for downloading aliases assigned to actor profile.
@@ -722,22 +724,22 @@ struct ActivityPubActorsController {
         guard let userName = request.parameters.get("name") else {
             throw ActivityPubError.userNameIsRequired
         }
-        
+
         let usersService = request.application.services.usersService
         let clearedUserName = userName.deletingPrefix("@")
-        
+
         guard let user = try await usersService.get(userName: clearedUserName, on: request.db) else {
             throw EntityNotFoundError.userNotFound
         }
-        
+
         let aliases = try await user.$aliases.get(on: request.db).map(\.activityPubProfile)
         let collectionDto = CollectionDto(id: "\(user.activityPubProfile)/alsoKnownAs",
                                           totalItems: aliases.count,
                                           items: aliases)
-        
+
         return try await collectionDto.encodeActivityResponse(for: request)
     }
-    
+
     /// Returns user ActivityPub profile.
     ///
     /// **CURL request:**
@@ -825,7 +827,7 @@ struct ActivityPubActorsController {
         guard let statusId = request.parameters.get("id") else {
             throw ActivityPubError.statusIdIsRequired
         }
-        
+
         guard let id = statusId.toId() else {
             throw ActivityPubError.incorrectStatusIdFormat(statusId)
         }
@@ -834,20 +836,20 @@ struct ActivityPubActorsController {
         guard let status = try await statusesService.get(id: id, on: request.db) else {
             throw EntityNotFoundError.statusNotFound
         }
-        
+
         guard [.public, .quietPublic].contains(status.visibility) else {
             throw EntityForbiddenError.statusForbidden
         }
-        
+
         guard status.isLocal else {
             return request.redirect(to: status.activityPubUrl, redirectType: .temporary)
         }
-        
+
         var replyToStatus: Status? = nil
         if let replyToStatusId = status.$replyToStatus.id {
             replyToStatus = try await statusesService.get(id: replyToStatusId, on: request.db)
         }
-        
+
         let noteDto = try await statusesService.note(basedOn: status, replyToStatus: replyToStatus, on: request.executionContext)
         return try await noteDto.encodeActivityResponse(for: request)
     }

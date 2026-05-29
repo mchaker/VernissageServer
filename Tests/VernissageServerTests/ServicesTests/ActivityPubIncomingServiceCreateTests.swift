@@ -11,8 +11,8 @@ import Queues
 import ActivityPubKit
 import Fluent
 
-@Suite("ActivityPubService (Create)", .serialized)
-struct ActivityPubServiceCreateTests {
+@Suite("ActivityPubIncomingService (Create)", .serialized)
+struct ActivityPubIncomingServiceCreateTests {
     let externalImageUrl = "https://joinvernissage.org/images/001.png?v=tmnnh3o0"
 
     var application: Application!
@@ -24,7 +24,7 @@ struct ActivityPubServiceCreateTests {
     @Test
     func `Followers create delivered to user inbox should stay followers-only`() async throws {
         // Arrange.
-        let activityPubService = ActivityPubService()
+        let activityPubIncomingService = ActivityPubIncomingService()
         let queueContext = application.getQueueContext(queueName: QueueName(string: "ActivityPubUserInboxJob"))
 
         let sourceUser = try await application.createUser(userName: "remotefollowerscreate", isLocal: false)
@@ -80,7 +80,7 @@ struct ActivityPubServiceCreateTests {
                                             receivedAt: Date.now)
 
         // Act.
-        try await activityPubService.create(activityPubRequest: request, on: queueContext.executionContext)
+        try await activityPubIncomingService.create(activityPubRequest: request, on: queueContext.executionContext)
 
         // Assert.
         let status = try await Status.query(on: application.db)
@@ -95,7 +95,7 @@ struct ActivityPubServiceCreateTests {
     @Test
     func `Mentioned create delivered to user inbox should be accepted even if actor is not followed`() async throws {
         // Arrange.
-        let activityPubService = ActivityPubService()
+        let activityPubIncomingService = ActivityPubIncomingService()
         let queueContext = application.getQueueContext(queueName: QueueName(string: "ActivityPubUserInboxJob"))
 
         let sourceUser = try await application.createUser(userName: "remotementionedcreate", isLocal: false)
@@ -147,7 +147,7 @@ struct ActivityPubServiceCreateTests {
                                             receivedAt: Date.now)
 
         // Act.
-        try await activityPubService.create(activityPubRequest: request, on: queueContext.executionContext)
+        try await activityPubIncomingService.create(activityPubRequest: request, on: queueContext.executionContext)
 
         // Assert.
         let status = try await Status.query(on: application.db)
@@ -162,7 +162,7 @@ struct ActivityPubServiceCreateTests {
     @Test
     func `Mentioned create delivered to user inbox should be rejected when recipient is not in addressing`() async throws {
         // Arrange.
-        let activityPubService = ActivityPubService()
+        let activityPubIncomingService = ActivityPubIncomingService()
         let queueContext = application.getQueueContext(queueName: QueueName(string: "ActivityPubUserInboxJob"))
 
         let sourceUser = try await application.createUser(userName: "remotementionedwrongrecipient", isLocal: false)
@@ -215,7 +215,7 @@ struct ActivityPubServiceCreateTests {
                                             receivedAt: Date.now)
 
         // Act.
-        try await activityPubService.create(activityPubRequest: request, on: queueContext.executionContext)
+        try await activityPubIncomingService.create(activityPubRequest: request, on: queueContext.executionContext)
 
         // Assert.
         let status = try await Status.query(on: application.db)
@@ -228,7 +228,7 @@ struct ActivityPubServiceCreateTests {
     @Test
     func `Public create delivered to user inbox should be added to followers timeline and public timeline`() async throws {
         // Arrange.
-        let activityPubService = ActivityPubService()
+        let activityPubIncomingService = ActivityPubIncomingService()
         let queueContext = application.getQueueContext(queueName: QueueName(string: "ActivityPubUserInboxJob"))
         let timelineService = application.services.timelineService
 
@@ -287,7 +287,7 @@ struct ActivityPubServiceCreateTests {
                                             receivedAt: Date.now)
 
         // Act.
-        try await activityPubService.create(activityPubRequest: request, on: queueContext.executionContext)
+        try await activityPubIncomingService.create(activityPubRequest: request, on: queueContext.executionContext)
 
         // Assert.
         let status = try await Status.query(on: application.db)

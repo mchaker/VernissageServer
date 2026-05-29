@@ -97,7 +97,7 @@ final class CollectionsService: CollectionsServiceType {
 
         let featuredStatusIds = featuredCollectionData.statusIds
         let statusesService = context.services.statusesService
-        let activityPubService = context.services.activityPubService
+        let activityPubDownloadService = context.services.activityPubDownloadService
 
         for featuredStatusId in featuredStatusIds {
             var status = try await statusesService.get(activityPubId: featuredStatusId, on: context.db)
@@ -105,7 +105,7 @@ final class CollectionsService: CollectionsServiceType {
             if status == nil,
                let noteDto = featuredCollectionData.statusNotes[featuredStatusId],
                noteDto.attributedTo == user.activityPubProfile {
-                
+
                 // Prevent creating new statuses when status doesn't contains any image.
                 guard let attachments = noteDto.attachment, !attachments.isEmpty, attachments.hasSupportedImages() else {
                     context.logger.warning("Featured collection note doesn't contain supported image attachments (status: \(featuredStatusId)).")
@@ -121,7 +121,7 @@ final class CollectionsService: CollectionsServiceType {
 
             // When we don't have status in collection od creating failed then try to download status from remote server.
             if status == nil {
-                status = try? await activityPubService.downloadStatus(activityPubId: featuredStatusId, on: context)
+                status = try? await activityPubDownloadService.downloadStatus(activityPubId: featuredStatusId, on: context)
             }
 
             guard let status, status.$user.id == userId else {

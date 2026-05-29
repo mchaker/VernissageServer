@@ -14,7 +14,7 @@ import Frostflake
 public final class ApplicationManager {
     public static let shared = ApplicationManager()
     private var application: Application?
-    
+
     private init() {
     }
 
@@ -25,26 +25,26 @@ public final class ApplicationManager {
 
         let app = try await Application.make(.testing)
         app.directory = .init(workingDirectory: Self.projectRootPath())
-                
+
         try await app.configure()
 
         // Services mocks.
         app.services.emailsService = MockEmailsService()
-        app.services.searchService = MockSearchService()
-        
+        app.services.activityPubDownloadService = MockActivityPubDownloadService()
+
         self.application = app
         return app
     }
-    
+
     private static func projectRootPath() -> String {
         let sourceFilePath = #filePath
         guard let testsDirectoryRange = sourceFilePath.range(of: "/Tests/") else {
             return FileManager.default.currentDirectoryPath
         }
-        
+
         return String(sourceFilePath[..<testsDirectoryRange.lowerBound])
     }
-    
+
     func generateId() -> Int64 {
         self.application?.services.snowflakeService.generate() ?? 0
     }

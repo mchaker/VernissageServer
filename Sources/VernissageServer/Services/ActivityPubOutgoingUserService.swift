@@ -8,33 +8,33 @@ import Vapor
 import ActivityPubKit
 
 extension Application.Services {
-    struct ActivityPubProfileUpdateServiceKey: StorageKey {
-        typealias Value = ActivityPubProfileUpdateServiceType
+    struct ActivityPubOutgoingUserServiceKey: StorageKey {
+        typealias Value = ActivityPubOutgoingUserServiceType
     }
 
-    var activityPubProfileUpdateService: ActivityPubProfileUpdateServiceType {
+    var activityPubOutgoingUserService: ActivityPubOutgoingUserServiceType {
         get {
-            self.application.storage[ActivityPubProfileUpdateServiceKey.self] ?? ActivityPubProfileUpdateService()
+            self.application.storage[ActivityPubOutgoingUserServiceKey.self] ?? ActivityPubOutgoingUserService()
         }
         nonmutating set {
-            self.application.storage[ActivityPubProfileUpdateServiceKey.self] = newValue
+            self.application.storage[ActivityPubOutgoingUserServiceKey.self] = newValue
         }
     }
 }
 
 @_documentation(visibility: private)
-protocol ActivityPubProfileUpdateServiceType: Sendable {
+protocol ActivityPubOutgoingUserServiceType: Sendable {
     /// Sends profile update as ActivityPub Update(Person) to remote mutual relationships of a local user.
     ///
     /// - Parameters:
     ///   - userId: The Id of the local user whose profile update should be sent.
     ///   - context: The execution context containing services and database access.
     /// - Throws: An error if preparing or sending updates fails.
-    func send(userId: Int64, on context: ExecutionContext) async throws
+    func update(userId: Int64, on context: ExecutionContext) async throws
 }
 
-final class ActivityPubProfileUpdateService: ActivityPubProfileUpdateServiceType {
-    func send(userId: Int64, on context: ExecutionContext) async throws {
+final class ActivityPubOutgoingUserService: ActivityPubOutgoingUserServiceType {
+    func update(userId: Int64, on context: ExecutionContext) async throws {
         let usersService = context.services.usersService
         let followsService = context.services.followsService
         let snowflakeService = context.services.snowflakeService
@@ -69,7 +69,7 @@ final class ActivityPubProfileUpdateService: ActivityPubProfileUpdateServiceType
         let published = updatedUser.updatedAt ?? Date()
 
         let inboxUrls = inboxes.compactMap { URL(string: $0) }
-        
+
         // Download suspended servers list.
         let suspendedServers = await suspendedServersService.getSnapshot(on: context)
 
@@ -79,7 +79,7 @@ final class ActivityPubProfileUpdateService: ActivityPubProfileUpdateServiceType
                 context.logger.warning("Sending profile update skipped for suspended host: '\(inboxUrl.host ?? "<unknown>")'.")
                 continue
             }
-            
+
             context.logger.info("[\(index + 1)/\(inboxUrls.count)] Sending profile update for '\(updatedUser.userName)' to inbox: '\(inboxUrl.absoluteString)'.")
             let activityPubClient = ActivityPubClient(privatePemKey: privateKey, userAgent: Constants.userAgent, host: inboxUrl.host)
 
