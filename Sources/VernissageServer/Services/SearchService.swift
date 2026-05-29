@@ -95,19 +95,23 @@ final class SearchService: SearchServiceType {
             .sort(\.$createdAt, .descending)
             .paginate(PageRequest(page: 1, per: 20))
 
-        // If the query contains url we can try to download status from remote server.
-        if tryToDownloadRemote && self.shouldDownloadFromRemote(query: query, on: context) {
-            return await self.searchByRemoteStatuses(activityPubUrl: query, on: context)
-        }
-
         guard let statuses else {
             return SearchResultDto(statuses: [])
         }
 
         let statusesService = context.services.statusesService
-        let statusesDtos = await statusesService.convertToDtos(statuses: statuses.items, on: context)
 
-        return SearchResultDto(statuses: statusesDtos)
+        if statuses.items.isEmpty == false {
+            let statusesDtos = await statusesService.convertToDtos(statuses: statuses.items, on: context)
+            return SearchResultDto(statuses: statusesDtos)
+        }
+
+        // If the query contains url we can try to download status from remote server.
+        if tryToDownloadRemote && self.shouldDownloadFromRemote(query: query, on: context) {
+            return await self.searchByRemoteStatuses(activityPubUrl: query, on: context)
+        }
+
+        return SearchResultDto(statuses: [])
     }
 
     private func searchByHashtags(query: String, on context: ExecutionContext) async -> SearchResultDto {
@@ -159,11 +163,6 @@ final class SearchService: SearchServiceType {
             .sort(\.$followersCount, .descending)
             .paginate(PageRequest(page: 1, per: 20))
 
-        // If the query contains url we can try to download user from remote server.
-        if self.shouldDownloadFromRemote(query: query, on: context) {
-            return await self.searchByRemoteUsers(activityPubProfileUrl: query, on: context)
-        }
-
         // In case that we didn't found any user we have to return empty list.
         guard let users else {
             context.logger.notice("Issue during filtering local users.")
@@ -171,9 +170,18 @@ final class SearchService: SearchServiceType {
         }
 
         let usersService = context.services.usersService
-        let userDtos = await usersService.convertToDtos(users: users.items, attachSensitive: false, on: context)
 
-        return SearchResultDto(users: userDtos)
+        if users.items.isEmpty == false {
+            let userDtos = await usersService.convertToDtos(users: users.items, attachSensitive: false, on: context)
+            return SearchResultDto(users: userDtos)
+        }
+
+        // If the query contains url we can try to download user from remote server.
+        if self.shouldDownloadFromRemote(query: query, on: context) {
+            return await self.searchByRemoteUsers(activityPubProfileUrl: query, on: context)
+        }
+
+        return SearchResultDto(users: [])
     }
 
     private func searchByRemoteUsers(query: String, on context: ExecutionContext) async -> SearchResultDto {
@@ -252,14 +260,14 @@ final class SearchService: SearchServiceType {
         // Get hostname from user query.
         guard let baseUrl = self.getBaseUrlFrom(url: activityPubUrl) else {
             context.logger.notice("Base url cannot be parsed from user query: '\(activityPubUrl)'.")
-            return SearchResultDto(users: [])
+            return SearchResultDto(statuses: [])
         }
 
         // Url cannot be mentioned in instance blocked domains.
         let isBlockedDomain = await self.existsInInstanceBlockedList(url: baseUrl, on: context)
         guard isBlockedDomain == false else {
             context.logger.notice("Base URL is listed in blocked instance domains: '\(activityPubUrl)'.")
-            return SearchResultDto(users: [])
+            return SearchResultDto(statuses: [])
         }
 
         // Download status from remote server.
@@ -273,7 +281,7 @@ final class SearchService: SearchServiceType {
             await context.logger.store("Downloading status '\(activityPubUrl)' from remote server failed.", error, on: context.application)
         }
 
-        return SearchResultDto(users: [])
+        return SearchResultDto(statuses: [])
     }
 
     private func existsInInstanceBlockedList(url: URL, on context: ExecutionContext) async -> Bool {
