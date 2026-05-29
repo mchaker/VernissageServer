@@ -156,7 +156,7 @@ final class AccountMigrationService: AccountMigrationServiceType {
         }
 
         let activityPubDownloadService = context.services.activityPubDownloadService
-        if let targetUser = try await activityPubDownloadService.getRemoteUserWithCacheVerification(activityPubProfile: targetActivityPubProfile, on: context) {
+        if let targetUser = try await activityPubDownloadService.downloadRemoteUserIfNeeded(activityPubProfile: targetActivityPubProfile, on: context) {
             return targetUser
         }
 
@@ -192,7 +192,7 @@ final class AccountMigrationService: AccountMigrationServiceType {
                 return try await usersService.get(userName: userName.uppercased(), on: context.db)?.activityPubProfile
             } else {
                 let activityPubDownloadService = context.services.activityPubDownloadService
-                return await activityPubDownloadService.getRemoteActivityPubProfile(userName: normalizedAccount, on: context)
+                return await activityPubDownloadService.resolveActivityPubProfile(userName: normalizedAccount, on: context)
             }
         }
 

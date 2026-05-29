@@ -2863,7 +2863,7 @@ final class StatusesService: StatusesServiceType {
         for userName in userNames {
             let newStatusMentionId = context.services.snowflakeService.generate()
 
-            let user = try? await activityPubDownloadService.getRemoteUserFromLocalDatabaseFirst(userName: userName, on: context)
+            let user = try? await activityPubDownloadService.downloadRemoteUserIfMissing(userName: userName, on: context)
             let statusMention = StatusMention(id: newStatusMentionId, statusId: statusId, userName: userName, userUrl: user?.url)
             statusMentions.append(statusMention)
         }
@@ -3266,7 +3266,7 @@ final class StatusesService: StatusesServiceType {
             let newStatusMentionId = context.application.services.snowflakeService.generate()
 
             let user: User? = if let activityubProfile = userName.href {
-                try? await activityPubDownloadService.getRemoteUserWithCacheVerification(activityPubProfile: activityubProfile, on: context)
+                try? await activityPubDownloadService.downloadRemoteUserIfNeeded(activityPubProfile: activityubProfile, on: context)
             } else {
                 nil
             }

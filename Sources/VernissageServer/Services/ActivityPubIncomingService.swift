@@ -308,7 +308,7 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
                 }
 
                 // Download user data (who created status) to local database.
-                guard let user = try await activityPubDownloadService.getRemoteUserWithCacheVerification(activityPubProfile: activityPubProfile, on: context) else {
+                guard let user = try await activityPubDownloadService.downloadRemoteUserIfNeeded(activityPubProfile: activityPubProfile, on: context) else {
                     context.logger.warning("User '\(activity.actor.actorIds().first ?? "")' cannot found in the local database (activity: \(activity.id)).")
                     continue
                 }
@@ -607,7 +607,7 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
 
         // Download user data (who liked status) to local database.
         guard let actorActivityPubId = activity.actor.actorIds().first,
-              let remoteUser = try await activityPubDownloadService.getRemoteUserWithCacheVerification(activityPubProfile: actorActivityPubId, on: context) else {
+              let remoteUser = try await activityPubDownloadService.downloadRemoteUserIfNeeded(activityPubProfile: actorActivityPubId, on: context) else {
             context.logger.warning("User '\(activity.actor.actorIds().first ?? "")' cannot found in the local database.")
             return
         }
@@ -841,7 +841,7 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
             return
         }
 
-        guard let reportingUser = try await activityPubDownloadService.getRemoteUserWithCacheVerification(activityPubProfile: actorActivityPubId, on: context) else {
+        guard let reportingUser = try await activityPubDownloadService.downloadRemoteUserIfNeeded(activityPubProfile: actorActivityPubId, on: context) else {
             context.logger.warning("Reporting user '\(actorActivityPubId)' cannot be found in the local database (activity: \(activity.id)).")
             return
         }
@@ -1010,7 +1010,7 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
         // Download profile from remote server.
         context.logger.info("Downloading account \(sourceProfileUrl) from remote server.")
 
-        let remoteUser = try await activityPubDownloadService.getRemoteUserWithCacheVerification(activityPubProfile: sourceProfileUrl, on: context)
+        let remoteUser = try await activityPubDownloadService.downloadRemoteUserIfNeeded(activityPubProfile: sourceProfileUrl, on: context)
         guard let remoteUser else {
             context.logger.warning("Account '\(sourceProfileUrl)' cannot be downloaded from remote server.")
             return

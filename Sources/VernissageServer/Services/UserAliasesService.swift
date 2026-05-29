@@ -51,6 +51,6 @@ final class UserAliasesService: UserAliasesServiceType {
         }
 
         let activityPubDownloadService = context.services.activityPubDownloadService
-        return await activityPubDownloadService.getRemoteActivityPubProfile(userName: normalizedAlias, on: context)
+        return await activityPubDownloadService.resolveActivityPubProfile(userName: normalizedAlias, on: context)
     }
 }

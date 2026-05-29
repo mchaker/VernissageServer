@@ -1627,8 +1627,8 @@ final class UsersService: UsersServiceType {
             return movedToUser.id
         }
 
-        if let downloadedMovedToUser = try await context.services.activityPubDownloadService
-            .getRemoteUserWithCacheVerification(activityPubProfile: movedTo, on: context) {
+        let activityPubDownloadService = context.services.activityPubDownloadService
+        if let downloadedMovedToUser = try await activityPubDownloadService.downloadRemoteUserIfNeeded(activityPubProfile: movedTo, on: context) {
             return downloadedMovedToUser.id
         }
 

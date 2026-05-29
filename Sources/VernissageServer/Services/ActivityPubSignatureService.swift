@@ -107,7 +107,7 @@ final class ActivityPubSignatureService: ActivityPubSignatureServiceType {
         let signatureData = try self.getSignatureData(activityPubRequest: activityPubRequest)
 
         // Download signed profile from remote server.
-        guard let signedUser = try await activityPubDownloadService.getRemoteUserWithCacheVerification(activityPubProfile: signatureActorId, on: context) else {
+        guard let signedUser = try await activityPubDownloadService.downloadRemoteUserIfNeeded(activityPubProfile: signatureActorId, on: context) else {
             throw ActivityPubError.userNotExistsInDatabase(signatureActorId)
         }
 

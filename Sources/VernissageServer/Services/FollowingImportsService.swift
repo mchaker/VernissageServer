@@ -178,7 +178,7 @@ final class FollowingImportsService: FollowingImportsServiceType {
         context.logger.info("Downloading account \(account) from remote server.")
 
         let activityPubDownloadService = context.application.services.activityPubDownloadService
-        let remoteUser = try await activityPubDownloadService.getRemoteUserFromLocalDatabaseFirst(userName: account, on: context)
+        let remoteUser = try await activityPubDownloadService.downloadRemoteUserIfMissing(userName: account, on: context)
         if let remoteUser {
             return remoteUser
         }

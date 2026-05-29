@@ -203,13 +203,13 @@ final class SearchService: SearchServiceType {
         }
 
         // Search user profile by remote webfinger.
-        guard let activityPubProfile = await activityPubDownloadService.getActivityPubProfile(userName: query, baseUrl: baseUrl, on: context) else {
+        guard let activityPubProfile = await activityPubDownloadService.resolveActivityPubProfile(userName: query, baseUrl: baseUrl, on: context) else {
             context.logger.warning("ActivityPub profile '\(query)' cannot be downloaded from: '\(baseUrl)'.")
             return SearchResultDto(users: [])
         }
 
         // Download user profile from remote server.
-        let user = try? await activityPubDownloadService.getRemoteUserWithCacheVerification(activityPubProfile: activityPubProfile, on: context)
+        let user = try? await activityPubDownloadService.downloadRemoteUserIfNeeded(activityPubProfile: activityPubProfile, on: context)
         guard let user else {
             context.logger.warning("ActivityPub profile cannot be downloaded: '\(activityPubProfile)'.")
             return SearchResultDto(users: [])
@@ -242,7 +242,7 @@ final class SearchService: SearchServiceType {
         }
 
         // Download user profile from remote server.
-        let user = try? await activityPubDownloadService.getRemoteUserWithCacheVerification(activityPubProfile: activityPubProfileUrl, on: context)
+        let user = try? await activityPubDownloadService.downloadRemoteUserIfNeeded(activityPubProfile: activityPubProfileUrl, on: context)
         guard let user else {
             context.logger.warning("ActivityPub profile cannot be downloaded: '\(activityPubProfileUrl)'.")
             return SearchResultDto(users: [])

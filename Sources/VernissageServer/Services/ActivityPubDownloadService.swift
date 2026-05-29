@@ -29,7 +29,9 @@ extension Application.Services {
 protocol ActivityPubDownloadServiceType: Sendable {
     /// Downloads a status by its ActivityPub ID.
     ///
-    /// If the status does not exist locally, attempts to download and store it.
+    /// The method first checks the local database and returns the existing status when it is already stored.
+    /// When the status is missing, it downloads the remote ActivityPub note, validates that the author is not blocked
+    /// and that the note contains supported image attachments, downloads the author profile if needed, and stores the status locally.
     ///
     /// - Parameters:
     ///   - activityPubId: The ActivityPub ID (URL) of the status to download.
@@ -40,44 +42,59 @@ protocol ActivityPubDownloadServiceType: Sendable {
 
     /// Downloads a status by its ActivityPub ID.
     ///
-    /// If the status does not exist locally, attempts to download and store it.
+    /// The method uses ``downloadStatus(activityPubId:on:)`` and returns `nil` for supported non-fatal failures,
+    /// such as statuses without supported image attachments or comments whose parent status cannot be created.
+    /// Other errors are still thrown to the caller.
     ///
     /// - Parameters:
     ///   - activityPubId: The ActivityPub ID (URL) of the status to download.
     ///   - context: The execution context providing services and database access.
-    /// - Returns: The downloaded or existing local `Status` object.
+    /// - Returns: The downloaded or existing local `Status` object, or `nil` when a supported non-fatal error is suppressed.
     func downloadStatusSuppressingErrors(activityPubId: String, on context: ExecutionContext) async throws -> Status?
 
-    /// Downloads a remote user and saves it locally based on user name.
+    /// Returns a remote user by username, downloading it only when it does not exist in the local database.
+    ///
+    /// The method first checks the local database by username and immediately returns that user without verifying freshness.
+    /// When the user is missing, it resolves the ActivityPub profile through WebFinger and then downloads or refreshes
+    /// the remote profile through ``downloadRemoteUserIfNeeded(activityPubProfile:on:)``.
     ///
     /// - Parameters:
-    ///   - userName: The ActivityPub username (e.g., user@domain) to download.
+    ///   - userName: The ActivityPub username (for example, `user@domain`) to resolve.
     ///   - context: The execution context for database and services.
-    /// - Returns: The downloaded user object or nil if not found.
-    /// - Throws: An error if the download fails.
-    func getRemoteUserFromLocalDatabaseFirst(userName: String, on context: ExecutionContext) async throws -> User?
+    /// - Returns: The local or downloaded user object, or `nil` when the profile cannot be resolved or downloaded.
+    /// - Throws: Database errors or errors from the remote user download flow.
+    func downloadRemoteUserIfMissing(userName: String, on context: ExecutionContext) async throws -> User?
 
-    /// Downloads a user by its ActivityPub ID.
+    /// Returns a remote user by ActivityPub profile URL, using the local freshness cache when possible.
     ///
-    /// If the user does not exist locally, attempts to download and store it.
-    /// If user exists and has been downloaded not long time ago it's returned from database.
+    /// The method first checks the local database by ActivityPub profile URL. Local users are always returned as-is.
+    /// Remote users are returned from the database when their stored copy is fresh enough; stale or missing remote users
+    /// are refreshed from the remote server and saved locally.
     ///
     /// - Parameters:
-    ///   - activityPubProfile: The ActivityPub ID (URL) of the user to download.
+    ///   - activityPubProfile: The ActivityPub profile URL of the user to download or refresh.
     ///   - context: The execution context providing services and database access.
-    /// - Returns: The downloaded or existing local `User` object.
-    /// - Throws: Throws an error if the user cannot be downloaded or processed.
-    func getRemoteUserWithCacheVerification(activityPubProfile: String, on context: ExecutionContext) async throws -> User?
+    /// - Returns: The existing, refreshed, or newly created `User` object, or `nil` when the profile cannot be downloaded.
+    /// - Throws: Database errors or errors from the remote user refresh flow.
+    func downloadRemoteUserIfNeeded(activityPubProfile: String, on context: ExecutionContext) async throws -> User?
 
-    /// Downloads a person by its ActivityPub ID.
+    /// Downloads a remote ActivityPub `Person` document by profile URL.
+    ///
+    /// The method signs the request with the default system user's private key, because some remote instances require
+    /// signed ActivityPub requests before returning actor data.
     ///
     /// - Parameters:
-    ///   - activityPubProfile: The ActivityPub ID (URL) of the person to download.
+    ///   - activityPubProfile: The ActivityPub profile URL of the person to download.
     ///   - context: The execution context providing services and database access.
     /// - Returns: The downloaded `PersonDto` object.
+    /// - Throws: Configuration, URL parsing, or network errors when the profile cannot be downloaded.
     func downloadPerson(activityPubProfile: String, on context: ExecutionContext) async throws -> PersonDto
 
     /// Refreshes a remote user and saves the latest version locally, bypassing freshness cache.
+    ///
+    /// The method still returns local users unchanged, because local profiles must not be overwritten from remote data.
+    /// For remote users, it downloads the `Person` document and profile images, then updates the existing database record
+    /// or creates a new one. If the remote profile cannot be downloaded or saved, the previously stored database value is returned.
     ///
     /// - Parameters:
     ///   - activityPubProfile: The URL of the user's ActivityPub profile.
@@ -86,22 +103,28 @@ protocol ActivityPubDownloadServiceType: Sendable {
     /// - Throws: An error if local database lookup fails.
     func refreshRemoteUser(activityPubProfile: String, on context: ExecutionContext) async throws -> User?
 
-    /// Retrieves an ActivityPub profile URL for a username from a remote server.
+    /// Resolves an ActivityPub profile URL for a username.
+    ///
+    /// The method extracts the remote instance base URL from the username, skips resolution when that instance is blocked,
+    /// and then uses WebFinger to find the ActivityPub actor profile URL.
     ///
     /// - Parameters:
-    ///   - userName: The ActivityPub username (e.g., user@domain).
+    ///   - userName: The ActivityPub username (for example, `user@domain`).
     ///   - context: The execution context for database and services.
-    /// - Returns: The ActivityPub profile URL or nil if not found.
-    func getRemoteActivityPubProfile(userName: String, on context: ExecutionContext) async -> String?
+    /// - Returns: The ActivityPub profile URL, or `nil` when the username cannot be parsed, the domain is blocked, or WebFinger fails.
+    func resolveActivityPubProfile(userName: String, on context: ExecutionContext) async -> String?
 
-    /// Retrieves an ActivityPub profile URL for a username from a remote server.
+    /// Resolves an ActivityPub profile URL for a username on the specified remote instance.
+    ///
+    /// The method discovers the WebFinger endpoint from host-meta when available, falls back to the default WebFinger URL,
+    /// and returns the profile URL from the `self` link in the WebFinger response.
     ///
     /// - Parameters:
-    ///   - userName: The ActivityPub username (e.g., user@domain).
-    ///   - baseUrl: Base url.
+    ///   - userName: The ActivityPub username (for example, `user@domain`).
+    ///   - baseUrl: The remote instance base URL used for host-meta and WebFinger discovery.
     ///   - context: The execution context for database and services.
-    /// - Returns: The ActivityPub profile URL or nil if not found.
-    func getActivityPubProfile(userName: String, baseUrl: URL, on context: ExecutionContext) async -> String?
+    /// - Returns: The ActivityPub profile URL, or `nil` when discovery or WebFinger resolution fails.
+    func resolveActivityPubProfile(userName: String, baseUrl: URL, on context: ExecutionContext) async -> String?
 }
 
 /// Service responsible for consuming requests retrieved on Activity Pub controllers from remote instances.
@@ -138,7 +161,7 @@ final class ActivityPubDownloadService: ActivityPubDownloadServiceType {
 
         // Download user data to local database.
         context.logger.info("Downloading user profile from remote server: '\(noteDto.attributedTo)'.")
-        let remoteUser = try await self.getRemoteUserWithCacheVerification(activityPubProfile: noteDto.attributedTo, on: context)
+        let remoteUser = try await self.downloadRemoteUserIfNeeded(activityPubProfile: noteDto.attributedTo, on: context)
 
         guard let remoteUser else {
             await context.logger.store("Account '\(noteDto.attributedTo)' cannot be downloaded from remote server.", nil, on: context.application)
@@ -189,7 +212,7 @@ final class ActivityPubDownloadService: ActivityPubDownloadServiceType {
         return try await activityPubClient.person(id: activityPubProfile, activityPubProfile: defaultSystemUser.activityPubProfile)
     }
 
-    func getRemoteUserFromLocalDatabaseFirst(userName: String, on context: ExecutionContext) async throws -> User? {
+    func downloadRemoteUserIfMissing(userName: String, on context: ExecutionContext) async throws -> User? {
         let usersService = context.services.usersService
 
         // Check if we already have user in local database.
@@ -199,17 +222,17 @@ final class ActivityPubDownloadService: ActivityPubDownloadServiceType {
         }
 
         // We have to download first URL to user data from webfinger.
-        let activityPubProfile = await self.getRemoteActivityPubProfile(userName: userName, on: context)
+        let activityPubProfile = await self.resolveActivityPubProfile(userName: userName, on: context)
         guard let activityPubProfile else {
             return nil
         }
 
         // Download remote user data to local database.
-        let userFromRemote = try await self.getRemoteUserWithCacheVerification(activityPubProfile: activityPubProfile, on: context)
+        let userFromRemote = try await self.downloadRemoteUserIfNeeded(activityPubProfile: activityPubProfile, on: context)
         return userFromRemote
     }
 
-    public func getRemoteUserWithCacheVerification(activityPubProfile: String, on context: ExecutionContext) async throws -> User? {
+    public func downloadRemoteUserIfNeeded(activityPubProfile: String, on context: ExecutionContext) async throws -> User? {
         let usersService = context.services.usersService
 
         let userFromDatabase = try await usersService.get(activityPubProfile: activityPubProfile, on: context.db)
@@ -260,7 +283,7 @@ final class ActivityPubDownloadService: ActivityPubDownloadServiceType {
         return user
     }
 
-    func getRemoteActivityPubProfile(userName: String, on context: ExecutionContext) async -> String? {
+    public func resolveActivityPubProfile(userName: String, on context: ExecutionContext) async -> String? {
         // Get hostname from user query.
         guard let baseUrl = self.getBaseUrlFrom(query: userName) else {
             context.logger.notice("Base url cannot be parsed from user name: '\(userName)'.")
@@ -275,7 +298,7 @@ final class ActivityPubDownloadService: ActivityPubDownloadServiceType {
         }
 
         // Search user profile by remote webfinger.
-        guard let activityPubProfile = await self.getActivityPubProfile(userName: userName, baseUrl: baseUrl, on: context) else {
+        guard let activityPubProfile = await self.resolveActivityPubProfile(userName: userName, baseUrl: baseUrl, on: context) else {
             context.logger.warning("ActivityPub profile '\(userName)' cannot be downloaded from: '\(baseUrl)'.")
             return nil
         }
@@ -283,7 +306,7 @@ final class ActivityPubDownloadService: ActivityPubDownloadServiceType {
         return activityPubProfile
     }
 
-    public func getActivityPubProfile(userName: String, baseUrl: URL, on context: ExecutionContext) async -> String? {
+    public func resolveActivityPubProfile(userName: String, baseUrl: URL, on context: ExecutionContext) async -> String? {
         do {
             let activityPubClient = ActivityPubClient()
 

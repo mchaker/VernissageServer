@@ -1903,7 +1903,7 @@ struct UsersController {
             return HTTPStatus.ok
         }
 
-        _ = try? await activityPubDownloadService.getRemoteUserWithCacheVerification(activityPubProfile: user.activityPubProfile, on: request.executionContext)
+        _ = try? await activityPubDownloadService.downloadRemoteUserIfNeeded(activityPubProfile: user.activityPubProfile, on: request.executionContext)
         return HTTPStatus.ok
     }
 
