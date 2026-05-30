@@ -46,6 +46,16 @@ protocol ActivityPubOutgoingStatusServiceType: Sendable {
     /// - Throws: Throws an error if the update could not be sent, history cannot be retrieved, or validation fails during processing.
     func update(statusActivityPubEvent: StatusActivityPubEvent, on context: ExecutionContext) async throws
 
+    /// Deletes a remote status given its ActivityPub Id and related identifiers.
+    ///
+    /// - Parameters:
+    ///   - statusActivityPubId: The ActivityPub ID of the status.
+    ///   - userId: The user identifier requesting deletion.
+    ///   - statusId: The internal status identifier.
+    ///   - context: The execution context for database and services.
+    /// - Throws: An error if deletion fails.
+    func delete(statusActivityPubId: String, userId: Int64, statusId: Int64, on context: ExecutionContext) async throws
+    
     /// Creates and distributes a like (favourite) activity based on the given status event.
     ///
     /// Processes the creation and remote distribution of a like/favourite for a status, handling network communication and event lifecycle.
@@ -271,6 +281,58 @@ final class ActivityPubOutgoingStatusService: ActivityPubOutgoingStatusServiceTy
         // Mark event as finished successfully.
         let hasFailedEvents = statusActivityPubEvent.statusActivityPubEventItems.contains(where: { $0.isSuccess == false || $0.isSuspended == true })
         try await statusActivityPubEvent.success(result: hasFailedEvents ? .finishedWithErrors : .finished, on: context)
+    }
+    
+    func delete(statusActivityPubId: String, userId: Int64, statusId: Int64, on context: ExecutionContext) async throws {
+        let followsService = context.services.followsService
+        let statusesService = context.services.statusesService
+
+        guard let user = try await User.query(on: context.db)
+            .filter(\.$id == userId)
+            .withDeleted()
+            .first() else {
+            context.logger.warning("User: '\(userId)' cannot exists in database.")
+            return
+        }
+
+        guard let privateKey = user.privateKey else {
+            context.logger.warning("Status: '\(statusActivityPubId)' cannot be send to shared inbox (delete). Missing private key.")
+            return
+        }
+
+        let users = try await User.query(on: context.db)
+            .filter(\.$isLocal == false)
+            .field(\.$sharedInbox)
+            .unique()
+            .all()
+
+        // All shared inboxes.
+        let allSharedInboxes = users.map({  $0.sharedInbox })
+
+        // Calculate followers shared inboxes.
+        let followersSharedInboxes = try await followsService.getFollowersOfSharedInboxes(followersOf: userId, on: context)
+
+        // Calculate commentators shared inboxes.
+        let commentatorsSharedInboxes = try await statusesService.getCommentatorsSharedInboxes(statusId: statusId, on: context)
+
+        // All combined shared inboxes.
+        let sharedInboxesSet = Array(followersSharedInboxes + commentatorsSharedInboxes + allSharedInboxes).unique()
+
+        for (index, sharedInbox) in sharedInboxesSet.enumerated() {
+            guard let sharedInbox, let sharedInboxUrl = URL(string: sharedInbox) else {
+                context.logger.warning("Status delete: '\(statusActivityPubId)' cannot be send to shared inbox url: '\(sharedInbox ?? "")'.")
+                continue
+            }
+
+            context.logger.info("[\(index + 1)/\(sharedInboxesSet.count)] Sending status delete: '\(statusActivityPubId)' to shared inbox: '\(sharedInboxUrl.absoluteString)'.")
+            let activityPubClient = ActivityPubClient(privatePemKey: privateKey, userAgent: Constants.userAgent, host: sharedInboxUrl.host)
+
+            do {
+                try await activityPubClient.delete(actorId: user.activityPubProfile, statusId: statusActivityPubId, on: sharedInboxUrl)
+            } catch {
+                context.logger.warning("Sending status delete to shared inbox error. Shared inbox url: \(sharedInboxUrl). Error: \(error).")
+            }
+        }
     }
 
     public func like(statusActivityPubEvent: StatusActivityPubEvent, statusFavouriteId: String?, on context: ExecutionContext) async throws {

@@ -1888,7 +1888,7 @@ struct UsersController {
     @Sendable
     func refresh(request: Request) async throws -> HTTPResponseStatus {
         let usersService = request.application.services.usersService
-        let activityPubDownloadService = request.application.services.activityPubDownloadService
+        let activityPubDownloadUserService = request.application.services.activityPubDownloadUserService
 
         guard let userName = request.parameters.get("name") else {
             throw UserError.userNameIsRequired
@@ -1903,7 +1903,7 @@ struct UsersController {
             return HTTPStatus.ok
         }
 
-        _ = try? await activityPubDownloadService.downloadRemoteUserIfNeeded(activityPubProfile: user.activityPubProfile, on: request.executionContext)
+        _ = try? await activityPubDownloadUserService.downloadIfNeeded(activityPubProfile: user.activityPubProfile, on: request.executionContext)
         return HTTPStatus.ok
     }
 

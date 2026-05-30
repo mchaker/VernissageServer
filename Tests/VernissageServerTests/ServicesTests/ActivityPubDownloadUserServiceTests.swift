@@ -8,13 +8,13 @@
 import Vapor
 import Testing
 
-@Suite("ActivityPubDownloadService")
-struct ActivityPubDownloadServiceTests {
+@Suite("ActivityPubDownloadUserService")
+struct ActivityPubDownloadUserServiceTests {
 
     @Test
     func `Webfinger link should be found from simple Mastodon XML.`() throws {
         // Arrange.
-        let activityPubDownloadService = ActivityPubDownloadService()
+        let activityPubDownloadUserService = ActivityPubDownloadUserService()
         let xml = """
 <?xml version="1.0" encoding="UTF-8"?>
 <XRD xmlns="http://docs.oasis-open.org/ns/xri/xrd-1.0">
@@ -23,7 +23,7 @@ struct ActivityPubDownloadServiceTests {
 """
 
         // Act.
-        let link = activityPubDownloadService.getWebfingerLink(from: xml)
+        let link = activityPubDownloadUserService.getWebfingerLink(from: xml)
 
         // Arrange.
         #expect(link == "https://mastodon.social/.well-known/webfinger?resource={uri}", "Webfinger link should be found.")
@@ -32,13 +32,13 @@ struct ActivityPubDownloadServiceTests {
     @Test
     func `Webfinger link should be found from complex Fredrica XML.`() throws {
         // Arrange.
-        let activityPubDownloadService = ActivityPubDownloadService()
+        let activityPubDownloadUserService = ActivityPubDownloadUserService()
         let xml = """
 <?xml version=\"1.0\"?>\n<XRD xmlns:hm=\"http://host-meta.net/xrd/1.0\" xmlns:mk=\"http://salmon-protocol.org/ns/magic-key\" xmlns=\"http://docs.oasis-open.org/ns/xri/xrd-1.0\">\n  <hm:Host>loma.ml</hm:Host>\n  <link rel=\"lrdd\" type=\"application/xrd+xml\" template=\"https://loma.ml/xrd?uri={uri}\"/>\n  <link rel=\"lrdd\" type=\"application/json\" template=\"https://loma.ml/.well-known/webfinger?resource={uri}\"/>\n  <link rel=\"acct-mgmt\" href=\"https://loma.ml/amcd\"/>\n  <link rel=\"http://services.mozilla.com/amcd/0.1\" href=\"https://loma.ml/amcd\"/>\n  <Property type=\"http://salmon-protocol.org/ns/magic-key\" mk:key_id=\"1\">RSA.8IKwSxM_gfcoTgzRczR28GNjSoS5HU2ebyN-0E1UT-48NGCH6MCY6SzpC7qGIpNjaPAarWG2KXv0EnFLU6Lan-op92UncpnFQerlGM0GNpF7HSP3VDDsi3pjZ8f1GUcpM9H6mglnCJFObdWoKkZ9OMH3ymQqmShlLEKKkfGM9u8.AQAB</Property>\n</XRD>
 """
 
         // Act.
-        let link = activityPubDownloadService.getWebfingerLink(from: xml)
+        let link = activityPubDownloadUserService.getWebfingerLink(from: xml)
 
         // Arrange.
         #expect(link == "https://loma.ml/.well-known/webfinger?resource={uri}", "Webfinger link should be found.")
@@ -47,7 +47,7 @@ struct ActivityPubDownloadServiceTests {
     @Test
     func `Webfinger link should be found from missing JSON Misskey XML.`() throws {
         // Arrange.
-        let activityPubDownloadService = ActivityPubDownloadService()
+        let activityPubDownloadUserService = ActivityPubDownloadUserService()
         let xml = """
 <?xml version="1.0" encoding="UTF-8"?>
 <XRD xmlns="http://docs.oasis-open.org/ns/xri/xrd-1.0">
@@ -56,7 +56,7 @@ struct ActivityPubDownloadServiceTests {
 """
 
         // Act.
-        let link = activityPubDownloadService.getWebfingerLink(from: xml)
+        let link = activityPubDownloadUserService.getWebfingerLink(from: xml)
 
         // Arrange.
         #expect(link == "https://misskeymint.net/.well-known/webfinger?resource={uri}", "Webfinger link should be found.")
@@ -65,7 +65,7 @@ struct ActivityPubDownloadServiceTests {
     @Test
     func `Webfinger link should be found from missing JSON Pixelfed XML.`() throws {
         // Arrange.
-        let activityPubDownloadService = ActivityPubDownloadService()
+        let activityPubDownloadUserService = ActivityPubDownloadUserService()
         let xml = """
 <?xml version="1.0" encoding="UTF-8"?>
 <XRD xmlns="http://docs.oasis-open.org/ns/xri/xrd-1.0">
@@ -74,7 +74,7 @@ struct ActivityPubDownloadServiceTests {
 """
 
         // Act.
-        let link = activityPubDownloadService.getWebfingerLink(from: xml)
+        let link = activityPubDownloadUserService.getWebfingerLink(from: xml)
 
         // Arrange.
         #expect(link == "https://pixelfed.social/.well-known/webfinger?resource={uri}", "Webfinger link should be found.")
@@ -83,7 +83,7 @@ struct ActivityPubDownloadServiceTests {
     @Test
     func `Webfinger link should be found from simple Vernissage XML.`() throws {
         // Arrange.
-        let activityPubDownloadService = ActivityPubDownloadService()
+        let activityPubDownloadUserService = ActivityPubDownloadUserService()
         let xml = """
 <?xml version="1.0" encoding="UTF-8"?>
 <XRD xmlns="http://docs.oasis-open.org/ns/xri/xrd-1.0">
@@ -92,7 +92,7 @@ struct ActivityPubDownloadServiceTests {
 """
 
         // Act.
-        let link = activityPubDownloadService.getWebfingerLink(from: xml)
+        let link = activityPubDownloadUserService.getWebfingerLink(from: xml)
 
         // Arrange.
         #expect(link == "https://vernissage.photos/.well-known/webfinger?resource={uri}", "Webfinger link should be found.")

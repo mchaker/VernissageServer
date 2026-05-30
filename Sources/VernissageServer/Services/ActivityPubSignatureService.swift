@@ -57,7 +57,7 @@ final class ActivityPubSignatureService: ActivityPubSignatureServiceType {
 
     /// Validate signature.
     public func validateSignature(activityPubRequest: ActivityPubRequestDto, on context: ExecutionContext) async throws {
-        let activityPubDownloadService = context.services.activityPubDownloadService
+        let activityPubDownloadUserService = context.services.activityPubDownloadUserService
         let cryptoService = context.services.cryptoService
         let instanceBlockedDomainsService = context.services.instanceBlockedDomainsService
         let instanceBlockedUsersService = context.services.instanceBlockedUsersService
@@ -107,7 +107,7 @@ final class ActivityPubSignatureService: ActivityPubSignatureServiceType {
         let signatureData = try self.getSignatureData(activityPubRequest: activityPubRequest)
 
         // Download signed profile from remote server.
-        guard let signedUser = try await activityPubDownloadService.downloadRemoteUserIfNeeded(activityPubProfile: signatureActorId, on: context) else {
+        guard let signedUser = try await activityPubDownloadUserService.downloadIfNeeded(activityPubProfile: signatureActorId, on: context) else {
             throw ActivityPubError.userNotExistsInDatabase(signatureActorId)
         }
 

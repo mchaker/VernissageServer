@@ -11,72 +11,22 @@ import ActivityPubKit
 import SwiftSoup
 
 extension Application.Services {
-    struct ActivityPubDownloadServiceKey: StorageKey {
-        typealias Value = ActivityPubDownloadServiceType
+    struct ActivityPubDownloadUserServiceKey: StorageKey {
+        typealias Value = ActivityPubDownloadUserServiceType
     }
 
-    var activityPubDownloadService: ActivityPubDownloadServiceType {
+    var activityPubDownloadUserService: ActivityPubDownloadUserServiceType {
         get {
-            self.application.storage[ActivityPubDownloadServiceKey.self] ?? ActivityPubDownloadService()
+            self.application.storage[ActivityPubDownloadUserServiceKey.self] ?? ActivityPubDownloadUserService()
         }
         nonmutating set {
-            self.application.storage[ActivityPubDownloadServiceKey.self] = newValue
+            self.application.storage[ActivityPubDownloadUserServiceKey.self] = newValue
         }
     }
 }
 
 @_documentation(visibility: private)
-protocol ActivityPubDownloadServiceType: Sendable {
-    /// Downloads a status by its ActivityPub ID.
-    ///
-    /// The method first checks the local database and returns the existing status when it is already stored.
-    /// When the status is missing, it downloads the remote ActivityPub note, validates that the author is not blocked
-    /// and that the note contains supported image attachments, downloads the author profile if needed, and stores the status locally.
-    ///
-    /// - Parameters:
-    ///   - activityPubId: The ActivityPub ID (URL) of the status to download.
-    ///   - context: The execution context providing services and database access.
-    /// - Returns: The downloaded or existing local `Status` object.
-    /// - Throws: Throws an error if the status cannot be downloaded or processed.
-    func downloadStatus(activityPubId: String, on context: ExecutionContext) async throws -> Status
-
-    /// Downloads a status by its ActivityPub ID.
-    ///
-    /// The method uses ``downloadStatus(activityPubId:on:)`` and returns `nil` for supported non-fatal failures,
-    /// such as statuses without supported image attachments or comments whose parent status cannot be created.
-    /// Other errors are still thrown to the caller.
-    ///
-    /// - Parameters:
-    ///   - activityPubId: The ActivityPub ID (URL) of the status to download.
-    ///   - context: The execution context providing services and database access.
-    /// - Returns: The downloaded or existing local `Status` object, or `nil` when a supported non-fatal error is suppressed.
-    func downloadStatusSuppressingErrors(activityPubId: String, on context: ExecutionContext) async throws -> Status?
-
-    /// Returns a remote user by username, downloading it only when it does not exist in the local database.
-    ///
-    /// The method first checks the local database by username and immediately returns that user without verifying freshness.
-    /// When the user is missing, it resolves the ActivityPub profile through WebFinger and then downloads or refreshes
-    /// the remote profile through ``downloadRemoteUserIfNeeded(activityPubProfile:on:)``.
-    ///
-    /// - Parameters:
-    ///   - userName: The ActivityPub username (for example, `user@domain`) to resolve.
-    ///   - context: The execution context for database and services.
-    /// - Returns: The local or downloaded user object, or `nil` when the profile cannot be resolved or downloaded.
-    /// - Throws: Database errors or errors from the remote user download flow.
-    func downloadRemoteUserIfMissing(userName: String, on context: ExecutionContext) async throws -> User?
-
-    /// Returns a remote user by ActivityPub profile URL, using the local freshness cache when possible.
-    ///
-    /// The method first checks the local database by ActivityPub profile URL. Local users are always returned as-is.
-    /// Remote users are returned from the database when their stored copy is fresh enough; stale or missing remote users
-    /// are refreshed from the remote server and saved locally.
-    ///
-    /// - Parameters:
-    ///   - activityPubProfile: The ActivityPub profile URL of the user to download or refresh.
-    ///   - context: The execution context providing services and database access.
-    /// - Returns: The existing, refreshed, or newly created `User` object, or `nil` when the profile cannot be downloaded.
-    /// - Throws: Database errors or errors from the remote user refresh flow.
-    func downloadRemoteUserIfNeeded(activityPubProfile: String, on context: ExecutionContext) async throws -> User?
+protocol ActivityPubDownloadUserServiceType: Sendable {
 
     /// Downloads a remote ActivityPub `Person` document by profile URL.
     ///
@@ -89,6 +39,32 @@ protocol ActivityPubDownloadServiceType: Sendable {
     /// - Returns: The downloaded `PersonDto` object.
     /// - Throws: Configuration, URL parsing, or network errors when the profile cannot be downloaded.
     func downloadPerson(activityPubProfile: String, on context: ExecutionContext) async throws -> PersonDto
+    
+    /// Returns a remote user by username, downloading it only when it does not exist in the local database.
+    ///
+    /// The method first checks the local database by username and immediately returns that user without verifying freshness.
+    /// When the user is missing, it resolves the ActivityPub profile through WebFinger and then downloads or refreshes
+    /// the remote profile through ``downloadRemoteUserIfNeeded(activityPubProfile:on:)``.
+    ///
+    /// - Parameters:
+    ///   - userName: The ActivityPub username (for example, `user@domain`) to resolve.
+    ///   - context: The execution context for database and services.
+    /// - Returns: The local or downloaded user object, or `nil` when the profile cannot be resolved or downloaded.
+    /// - Throws: Database errors or errors from the remote user download flow.
+    func downloadIfMissing(userName: String, on context: ExecutionContext) async throws -> User?
+
+    /// Returns a remote user by ActivityPub profile URL, using the local freshness cache when possible.
+    ///
+    /// The method first checks the local database by ActivityPub profile URL. Local users are always returned as-is.
+    /// Remote users are returned from the database when their stored copy is fresh enough; stale or missing remote users
+    /// are refreshed from the remote server and saved locally.
+    ///
+    /// - Parameters:
+    ///   - activityPubProfile: The ActivityPub profile URL of the user to download or refresh.
+    ///   - context: The execution context providing services and database access.
+    /// - Returns: The existing, refreshed, or newly created `User` object, or `nil` when the profile cannot be downloaded.
+    /// - Throws: Database errors or errors from the remote user refresh flow.
+    func downloadIfNeeded(activityPubProfile: String, on context: ExecutionContext) async throws -> User?
 
     /// Refreshes a remote user and saves the latest version locally, bypassing freshness cache.
     ///
@@ -127,72 +103,7 @@ protocol ActivityPubDownloadServiceType: Sendable {
     func resolveActivityPubProfile(userName: String, baseUrl: URL, on context: ExecutionContext) async -> String?
 }
 
-/// Service responsible for consuming requests retrieved on Activity Pub controllers from remote instances.
-final class ActivityPubDownloadService: ActivityPubDownloadServiceType {
-
-    public func downloadStatus(activityPubId: String, on context: ExecutionContext) async throws -> Status {
-        let statusesService = context.services.statusesService
-        let instanceBlockedUsersService = context.services.instanceBlockedUsersService
-
-        // When we already have status in database we don't have to download it.
-        if let status = try await statusesService.get(activityPubId: activityPubId, on: context.db) {
-            return status
-        }
-
-        // Download status JSON from remote server (via ActivityPub endpoints).
-        context.logger.info("Downloading status from remote server: '\(activityPubId)'.")
-        let noteDto = try await self.downloadRemoteStatus(activityPubId: activityPubId, on: context)
-
-        // Verify once again if status not exist in database.
-        if let status = try await statusesService.get(activityPubId: noteDto.id, on: context.db) {
-            return status
-        }
-
-        // We cannot download statuses from blocked actors (via announce or search).
-        if try await instanceBlockedUsersService.isActorBlockedByInstance(activityPubId: noteDto.attributedTo, on: context) {
-            context.logger.info("Actor (\(noteDto.attributedTo)) of downloaded status is blocked by the instance.")
-            throw ActivityPubError.actorIsBlockedByInstance(noteDto.attributedTo)
-        }
-
-        guard let attachments = noteDto.attachment, !attachments.isEmpty, attachments.hasSupportedImages() else {
-            context.logger.warning("Object doesn't contain any supported image media type attachments (status: \(noteDto.id), media types: '\(noteDto.attachment?.mediaTypes() ?? "")').")
-            throw ActivityPubError.missingSupportedImageAttachments(activityPubId)
-        }
-
-        // Download user data to local database.
-        context.logger.info("Downloading user profile from remote server: '\(noteDto.attributedTo)'.")
-        let remoteUser = try await self.downloadRemoteUserIfNeeded(activityPubProfile: noteDto.attributedTo, on: context)
-
-        guard let remoteUser else {
-            await context.logger.store("Account '\(noteDto.attributedTo)' cannot be downloaded from remote server.", nil, on: context.application)
-            throw ActivityPubError.actorNotDownloaded(noteDto.attributedTo)
-        }
-
-        // Create status in database.
-        context.logger.info("Creating status in local database: '\(activityPubId)'.")
-        let status = try await statusesService.create(basedOn: noteDto,
-                                                      userId: remoteUser.requireID(),
-                                                      visibility: .public,
-                                                      on: context)
-
-        // Recalculate numer of user statuses.
-        try await statusesService.updateStatusCount(for: remoteUser.requireID(), on: context.db)
-
-        return status
-    }
-
-    public func downloadStatusSuppressingErrors(activityPubId: String, on context: ExecutionContext) async throws -> Status? {
-        do {
-            let downloadedStatus = try await self.downloadStatus(activityPubId: activityPubId, on: context)
-            return downloadedStatus
-        } catch ActivityPubError.missingSupportedImageAttachments {
-            // Consume this kind of error (it’s not a real error - statuses without images are simply not supported).
-        } catch StatusError.cannotAddCommentWithoutCommentedStatus {
-            // Consume this kind of error (it’s not a real error - we cannot create comment to not exists status).
-        }
-
-        return nil
-    }
+final class ActivityPubDownloadUserService: ActivityPubDownloadUserServiceType {
 
     public func downloadPerson(activityPubProfile: String, on context: ExecutionContext) async throws -> PersonDto {
         let usersService = context.services.usersService
@@ -212,7 +123,7 @@ final class ActivityPubDownloadService: ActivityPubDownloadServiceType {
         return try await activityPubClient.person(id: activityPubProfile, activityPubProfile: defaultSystemUser.activityPubProfile)
     }
 
-    func downloadRemoteUserIfMissing(userName: String, on context: ExecutionContext) async throws -> User? {
+    public func downloadIfMissing(userName: String, on context: ExecutionContext) async throws -> User? {
         let usersService = context.services.usersService
 
         // Check if we already have user in local database.
@@ -228,11 +139,11 @@ final class ActivityPubDownloadService: ActivityPubDownloadServiceType {
         }
 
         // Download remote user data to local database.
-        let userFromRemote = try await self.downloadRemoteUserIfNeeded(activityPubProfile: activityPubProfile, on: context)
+        let userFromRemote = try await self.downloadIfNeeded(activityPubProfile: activityPubProfile, on: context)
         return userFromRemote
     }
 
-    public func downloadRemoteUserIfNeeded(activityPubProfile: String, on context: ExecutionContext) async throws -> User? {
+    public func downloadIfNeeded(activityPubProfile: String, on context: ExecutionContext) async throws -> User? {
         let usersService = context.services.usersService
 
         let userFromDatabase = try await usersService.get(activityPubProfile: activityPubProfile, on: context.db)
@@ -400,51 +311,6 @@ final class ActivityPubDownloadService: ActivityPubDownloadServiceType {
         }
 
         return anyTemplate
-    }
-
-    private func downloadRemoteStatus(activityPubId: String, on context: ExecutionContext) async throws -> NoteDto {
-        guard let noteUrl = URL(string: activityPubId) else {
-            await context.logger.store("Invalid URL to note: '\(activityPubId)'.", nil, on: context.application)
-            throw ActivityPubError.invalidNoteUrl(activityPubId)
-        }
-
-        let usersService = context.services.usersService
-        guard let defaultSystemUser = try await usersService.getDefaultSystemUser(on: context.db) else {
-            throw ActivityPubError.missingInstanceAdminAccount
-        }
-
-        guard let privateKey = defaultSystemUser.privateKey else {
-            throw ActivityPubError.missingInstanceAdminPrivateKey
-        }
-
-        do {
-            let activityPubClient = ActivityPubClient(privatePemKey: privateKey, userAgent: Constants.userAgent, host: noteUrl.host)
-            return try await activityPubClient.note(url: noteUrl, activityPubProfile: defaultSystemUser.activityPubProfile)
-        } catch let networkError as NetworkError {
-            let networkErrorDescription: String
-
-            if let localizedDescription = networkError.errorDescription, !localizedDescription.isEmpty {
-                networkErrorDescription = localizedDescription
-            } else {
-                networkErrorDescription = String(describing: networkError)
-            }
-
-            context.logger.warning("Error during download status: '\(activityPubId)'. Error: \(networkErrorDescription)")
-            throw ActivityPubError.statusHasNotBeenDownloaded(activityPubId, networkErrorDescription)
-        } catch {
-            let errorDescription: String
-
-            if let localizedError = error as? LocalizedError,
-               let localizedDescription = localizedError.errorDescription,
-               !localizedDescription.isEmpty {
-                errorDescription = localizedDescription
-            } else {
-                errorDescription = String(describing: error)
-            }
-
-            context.logger.warning("Error during processing status: '\(activityPubId)'. Error: \(errorDescription)")
-            throw ActivityPubError.statusCannotBeProcessed(activityPubId, errorDescription)
-        }
     }
 
     private func update(personProfile: PersonDto, profileIconFileName: String?, profileImageFileName: String?, on context: ExecutionContext) async -> User? {

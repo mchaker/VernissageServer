@@ -155,8 +155,8 @@ final class AccountMigrationService: AccountMigrationServiceType {
             return targetUser
         }
 
-        let activityPubDownloadService = context.services.activityPubDownloadService
-        if let targetUser = try await activityPubDownloadService.downloadRemoteUserIfNeeded(activityPubProfile: targetActivityPubProfile, on: context) {
+        let activityPubDownloadUserService = context.services.activityPubDownloadUserService
+        if let targetUser = try await activityPubDownloadUserService.downloadIfNeeded(activityPubProfile: targetActivityPubProfile, on: context) {
             return targetUser
         }
 
@@ -191,8 +191,8 @@ final class AccountMigrationService: AccountMigrationServiceType {
             if self.isLocalDomain(domain, on: context) {
                 return try await usersService.get(userName: userName.uppercased(), on: context.db)?.activityPubProfile
             } else {
-                let activityPubDownloadService = context.services.activityPubDownloadService
-                return await activityPubDownloadService.resolveActivityPubProfile(userName: normalizedAccount, on: context)
+                let activityPubDownloadUserService = context.services.activityPubDownloadUserService
+                return await activityPubDownloadUserService.resolveActivityPubProfile(userName: normalizedAccount, on: context)
             }
         }
 
@@ -230,7 +230,8 @@ final class AccountMigrationService: AccountMigrationServiceType {
             return user
         }
 
-        return try await context.services.activityPubDownloadService.refreshRemoteUser(activityPubProfile: activityPubProfile, on: context)
+        let activityPubDownloadUserService = context.services.activityPubDownloadUserService
+        return try await activityPubDownloadUserService.refreshRemoteUser(activityPubProfile: activityPubProfile, on: context)
     }
 
     private func targetHasAlias(sourceActivityPubProfile: String, targetUser: User, on context: ExecutionContext) async throws -> Bool {
@@ -245,8 +246,8 @@ final class AccountMigrationService: AccountMigrationServiceType {
             }
         }
 
-        let activityPubDownloadService = context.services.activityPubDownloadService
-        let remoteTargetPerson = try await activityPubDownloadService.downloadPerson(activityPubProfile: targetUser.activityPubProfile, on: context)
+        let activityPubDownloadUserService = context.services.activityPubDownloadUserService
+        let remoteTargetPerson = try await activityPubDownloadUserService.downloadPerson(activityPubProfile: targetUser.activityPubProfile, on: context)
         guard let alsoKnownAs = remoteTargetPerson.alsoKnownAs else {
             return false
         }

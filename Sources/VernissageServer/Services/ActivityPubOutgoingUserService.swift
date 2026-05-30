@@ -5,6 +5,7 @@
 //
 
 import Vapor
+import FluentKit
 import ActivityPubKit
 
 extension Application.Services {
@@ -31,6 +32,13 @@ protocol ActivityPubOutgoingUserServiceType: Sendable {
     ///   - context: The execution context containing services and database access.
     /// - Throws: An error if preparing or sending updates fails.
     func update(userId: Int64, on context: ExecutionContext) async throws
+    
+    /// Sends a request to delete a local user to all remote servers (shared inbox), notifying them about the account removal.
+    /// - Parameters:
+    ///   - userId: The identifier of the user to be deleted (local users only).
+    ///   - context: Queue context for async operations.
+    /// - Throws: Errors related to retrieving the user, missing private key, or network errors when sending the request.
+    func delete(userId: Int64, on context: ExecutionContext) async throws
 }
 
 final class ActivityPubOutgoingUserService: ActivityPubOutgoingUserServiceType {
@@ -93,6 +101,53 @@ final class ActivityPubOutgoingUserService: ActivityPubOutgoingUserServiceType {
             } catch {
                 try? await suspendedServersService.registerConnectionError(for: inboxUrl.host, error: error, on: context)
                 await context.logger.store("Sending profile update to inbox error.", error, on: context.application)
+            }
+        }
+    }
+    
+    func delete(userId: Int64, on context: ExecutionContext) async throws {
+        guard let userToDelete = try await User.query(on: context.application.db)
+            .withDeleted()
+            .filter(\.$id == userId)
+            .first() else {
+            context.logger.warning("User: '\(userId)' cannot exists in database.")
+            return
+        }
+
+        guard userToDelete.isLocal else {
+            context.logger.warning("User: '\(userId)' doesn't have to be deleted from remote server (it's remote user).")
+            return
+        }
+
+        guard let privateKey = userToDelete.privateKey else {
+            context.logger.warning("User: '\(userId)' cannot be send to shared inbox (delete). Missing private key.")
+            return
+        }
+
+        let users = try await User.query(on: context.application.db)
+            .filter(\.$isLocal == false)
+            .field(\.$sharedInbox)
+            .unique()
+            .all()
+
+        let sharedInboxes = users.map({  $0.sharedInbox })
+        for (index, sharedInbox) in sharedInboxes.enumerated() {
+            guard let sharedInbox, let sharedInboxUrl = URL(string: sharedInbox) else {
+                context.logger.warning("User delete: '\(userToDelete.userName)' cannot be send to shared inbox url: '\(sharedInbox ?? "")'.")
+                continue
+            }
+
+            context.logger.info("[\(index + 1)/\(sharedInboxes.count)] Sending user delete: '\(userToDelete.userName)' to shared inbox: '\(sharedInboxUrl.absoluteString)'.")
+            let activityPubClient = ActivityPubClient(privatePemKey: privateKey, userAgent: Constants.userAgent, host: sharedInboxUrl.host)
+
+            do {
+                try await activityPubClient.delete(actorId: userToDelete.activityPubProfile, on: sharedInboxUrl)
+            } catch {
+                if error is NetworkError || error.isConnectionError {
+                    context.logger.warning("Sending user delete to shared inbox error. Shared inbox url: \(sharedInboxUrl). Error: \(error).")
+                } else {
+                    await context.logger.store("Sending user delete to shared inbox error.", error, on: context.application)
+                }
             }
         }
     }

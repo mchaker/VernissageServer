@@ -185,7 +185,7 @@ final class SearchService: SearchServiceType {
     }
 
     private func searchByRemoteUsers(query: String, on context: ExecutionContext) async -> SearchResultDto {
-        let activityPubDownloadService = context.services.activityPubDownloadService
+        let activityPubDownloadUserService = context.services.activityPubDownloadUserService
         let flexiFieldService = context.services.flexiFieldService
         let usersService = context.services.usersService
 
@@ -203,13 +203,13 @@ final class SearchService: SearchServiceType {
         }
 
         // Search user profile by remote webfinger.
-        guard let activityPubProfile = await activityPubDownloadService.resolveActivityPubProfile(userName: query, baseUrl: baseUrl, on: context) else {
+        guard let activityPubProfile = await activityPubDownloadUserService.resolveActivityPubProfile(userName: query, baseUrl: baseUrl, on: context) else {
             context.logger.warning("ActivityPub profile '\(query)' cannot be downloaded from: '\(baseUrl)'.")
             return SearchResultDto(users: [])
         }
 
         // Download user profile from remote server.
-        let user = try? await activityPubDownloadService.downloadRemoteUserIfNeeded(activityPubProfile: activityPubProfile, on: context)
+        let user = try? await activityPubDownloadUserService.downloadIfNeeded(activityPubProfile: activityPubProfile, on: context)
         guard let user else {
             context.logger.warning("ActivityPub profile cannot be downloaded: '\(activityPubProfile)'.")
             return SearchResultDto(users: [])
@@ -224,7 +224,7 @@ final class SearchService: SearchServiceType {
     }
 
     private func searchByRemoteUsers(activityPubProfileUrl: String, on context: ExecutionContext) async -> SearchResultDto {
-        let activityPubDownloadService = context.services.activityPubDownloadService
+        let activityPubDownloadUserService = context.services.activityPubDownloadUserService
         let flexiFieldService = context.services.flexiFieldService
         let usersService = context.services.usersService
 
@@ -242,7 +242,7 @@ final class SearchService: SearchServiceType {
         }
 
         // Download user profile from remote server.
-        let user = try? await activityPubDownloadService.downloadRemoteUserIfNeeded(activityPubProfile: activityPubProfileUrl, on: context)
+        let user = try? await activityPubDownloadUserService.downloadIfNeeded(activityPubProfile: activityPubProfileUrl, on: context)
         guard let user else {
             context.logger.warning("ActivityPub profile cannot be downloaded: '\(activityPubProfileUrl)'.")
             return SearchResultDto(users: [])
@@ -272,8 +272,8 @@ final class SearchService: SearchServiceType {
 
         // Download status from remote server.
         do {
-            let activityPubDownloadService = context.services.activityPubDownloadService
-            let downloadedStatus = try await activityPubDownloadService.downloadStatus(activityPubId: activityPubUrl, on: context)
+            let activityPubDownloadStatusService = context.services.activityPubDownloadStatusService
+            let downloadedStatus = try await activityPubDownloadStatusService.download(activityPubId: activityPubUrl, on: context)
 
             return await self.searchByStatuses(query: downloadedStatus.activityPubUrl, tryToDownloadRemote: false, on: context)
         }

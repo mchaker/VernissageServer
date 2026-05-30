@@ -234,7 +234,7 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
     }
 
     public func create(activityPubRequest: ActivityPubRequestDto, on context: ExecutionContext) async throws {
-        let activityPubDownloadService = context.services.activityPubDownloadService
+        let activityPubDownloadUserService = context.services.activityPubDownloadUserService
         let userBlockedUsersService = context.services.userBlockedUsersService
         let statusesService = context.services.statusesService
         let activity = activityPubRequest.activity
@@ -308,7 +308,7 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
                 }
 
                 // Download user data (who created status) to local database.
-                guard let user = try await activityPubDownloadService.downloadRemoteUserIfNeeded(activityPubProfile: activityPubProfile, on: context) else {
+                guard let user = try await activityPubDownloadUserService.downloadIfNeeded(activityPubProfile: activityPubProfile, on: context) else {
                     context.logger.warning("User '\(activity.actor.actorIds().first ?? "")' cannot found in the local database (activity: \(activity.id)).")
                     continue
                 }
@@ -602,12 +602,12 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
 
     public func like(activityPubRequest: ActivityPubRequestDto, on context: ExecutionContext) async throws {
         let statusesService = context.services.statusesService
-        let activityPubDownloadService = context.services.activityPubDownloadService
+        let activityPubDownloadUserService = context.services.activityPubDownloadUserService
         let activity = activityPubRequest.activity
 
         // Download user data (who liked status) to local database.
         guard let actorActivityPubId = activity.actor.actorIds().first,
-              let remoteUser = try await activityPubDownloadService.downloadRemoteUserIfNeeded(activityPubProfile: actorActivityPubId, on: context) else {
+              let remoteUser = try await activityPubDownloadUserService.downloadIfNeeded(activityPubProfile: actorActivityPubId, on: context) else {
             context.logger.warning("User '\(activity.actor.actorIds().first ?? "")' cannot found in the local database.")
             return
         }
@@ -711,7 +711,6 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
         let statusesService = context.services.statusesService
         let usersService = context.services.usersService
         let instanceBlockedDomainsService = context.services.instanceBlockedDomainsService
-        let activityPubDownloadService = context.services.activityPubDownloadService
 
         let activity = activityPubRequest.activity
         let objects = activity.object.objects()
@@ -744,7 +743,7 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
             }
 
             // Create (or get from local database) main status in local database.
-            let downloadedStatus = try await activityPubDownloadService.downloadStatusSuppressingErrors(activityPubId: object.id, on: context)
+            let downloadedStatus = try await self.downloadStatusSuppressingErrors(activityPubId: object.id, on: context)
             guard let downloadedStatus else {
                 context.logger.warning("Boosted status '\(object.id)' has not been downloaded because it's not an image (activity: \(activity.id)).")
                 continue
@@ -818,7 +817,7 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
     public func flag(activityPubRequest: ActivityPubRequestDto, on context: ExecutionContext) async throws {
         let activity = activityPubRequest.activity
         let statusesService = context.services.statusesService
-        let activityPubDownloadService = context.services.activityPubDownloadService
+        let activityPubDownloadUserService = context.services.activityPubDownloadUserService
 
         let objects = activity.object.objects()
         let reportedStatus = try await self.reportedLocalStatus(from: objects, on: context)
@@ -841,7 +840,7 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
             return
         }
 
-        guard let reportingUser = try await activityPubDownloadService.downloadRemoteUserIfNeeded(activityPubProfile: actorActivityPubId, on: context) else {
+        guard let reportingUser = try await activityPubDownloadUserService.downloadIfNeeded(activityPubProfile: actorActivityPubId, on: context) else {
             context.logger.warning("Reporting user '\(actorActivityPubId)' cannot be found in the local database (activity: \(activity.id)).")
             return
         }
@@ -875,6 +874,20 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
         try await self.refreshRemoteUser(activityPubRequest: activityPubRequest, action: "Remove", on: context)
     }
 
+    private func downloadStatusSuppressingErrors(activityPubId: String, on context: ExecutionContext) async throws -> Status? {
+        do {
+            let activityPubDownloadStatusService = context.services.activityPubDownloadStatusService
+            let downloadedStatus = try await activityPubDownloadStatusService.download(activityPubId: activityPubId, on: context)
+            return downloadedStatus
+        } catch ActivityPubError.missingSupportedImageAttachments {
+            // Consume this kind of error (it’s not a real error - statuses without images are simply not supported).
+        } catch StatusError.cannotAddCommentWithoutCommentedStatus {
+            // Consume this kind of error (it’s not a real error - we cannot create comment to not exists status).
+        }
+
+        return nil
+    }
+    
     private func reportedLocalStatus(from objects: [ObjectDto], on context: ExecutionContext) async throws -> Status? {
         let statusesService = context.services.statusesService
 
@@ -1003,14 +1016,14 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
     private func follow(sourceProfileUrl: String, activityPubObject: ObjectDto, activityId: String, on context: ExecutionContext) async throws {
         context.logger.info("Following account: '\(activityPubObject.id)' by account '\(sourceProfileUrl)' (from remote server).")
 
-        let activityPubDownloadService = context.services.activityPubDownloadService
+        let activityPubDownloadUserService = context.services.activityPubDownloadUserService
         let followsService = context.services.followsService
         let usersService = context.services.usersService
 
         // Download profile from remote server.
         context.logger.info("Downloading account \(sourceProfileUrl) from remote server.")
 
-        let remoteUser = try await activityPubDownloadService.downloadRemoteUserIfNeeded(activityPubProfile: sourceProfileUrl, on: context)
+        let remoteUser = try await activityPubDownloadUserService.downloadIfNeeded(activityPubProfile: sourceProfileUrl, on: context)
         guard let remoteUser else {
             context.logger.warning("Account '\(sourceProfileUrl)' cannot be downloaded from remote server.")
             return
@@ -1354,8 +1367,8 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
             return
         }
 
-        let activityPubDownloadService = context.services.activityPubDownloadService
-        let refreshedUser = try await activityPubDownloadService.refreshRemoteUser(activityPubProfile: actorId, on: context) ?? userFromDatabase
+        let activityPubDownloadUserService = context.services.activityPubDownloadUserService
+        let refreshedUser = try await activityPubDownloadUserService.refreshRemoteUser(activityPubProfile: actorId, on: context) ?? userFromDatabase
 
         guard let featuredCollection = refreshedUser.featured?.nilIfEmpty else {
             context.logger.info("Skipping '\(action)' activity for actor without featured collection: '\(actorId)'.")

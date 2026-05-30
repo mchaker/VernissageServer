@@ -358,16 +358,6 @@ protocol StatusesServiceType: Sendable {
     /// - Throws: An error if deletion fails.
     func delete(id statusId: Int64, on database: Database) async throws
 
-    /// Deletes a remote status given its ActivityPub Id and related identifiers.
-    ///
-    /// - Parameters:
-    ///   - statusActivityPubId: The ActivityPub ID of the status.
-    ///   - userId: The user identifier requesting deletion.
-    ///   - statusId: The internal status identifier.
-    ///   - context: The execution context for database and services.
-    /// - Throws: An error if deletion fails.
-    func deleteFromRemote(statusActivityPubId: String, userId: Int64, statusId: Int64, on context: ExecutionContext) async throws
-
     /// Updates the reblogs count for the given status.
     ///
     /// - Parameters:
@@ -500,6 +490,8 @@ protocol StatusesServiceType: Sendable {
     ///   - context: The execution context for database and services.
     /// - Returns: An array of StatusHashtag objects.
     func getStatusHashtags(statusId: Int64, note: String?, on context: ExecutionContext) async -> [StatusHashtag]
+    
+    func getCommentatorsSharedInboxes(statusId: Int64?, on context: ExecutionContext) async throws -> [String]
 }
 
 /// A service for managing statuses in the system.
@@ -2028,7 +2020,7 @@ final class StatusesService: StatusesServiceType {
             .dispatch(ActivityPubStatusJob.self, eventContext)
     }
 
-    private func getCommentatorsSharedInboxes(statusId: Int64?, on context: ExecutionContext) async throws -> [String] {
+    public func getCommentatorsSharedInboxes(statusId: Int64?, on context: ExecutionContext) async throws -> [String] {
         guard let statusId else {
             return []
         }
@@ -2644,57 +2636,6 @@ final class StatusesService: StatusesServiceType {
         }
     }
 
-    func deleteFromRemote(statusActivityPubId: String, userId: Int64, statusId: Int64, on context: ExecutionContext) async throws {
-        let followsService = context.services.followsService
-
-        guard let user = try await User.query(on: context.db)
-            .filter(\.$id == userId)
-            .withDeleted()
-            .first() else {
-            context.logger.warning("User: '\(userId)' cannot exists in database.")
-            return
-        }
-
-        guard let privateKey = user.privateKey else {
-            context.logger.warning("Status: '\(statusActivityPubId)' cannot be send to shared inbox (delete). Missing private key.")
-            return
-        }
-
-        let users = try await User.query(on: context.db)
-            .filter(\.$isLocal == false)
-            .field(\.$sharedInbox)
-            .unique()
-            .all()
-
-        // All shared inboxes.
-        let allSharedInboxes = users.map({  $0.sharedInbox })
-
-        // Calculate followers shared inboxes.
-        let followersSharedInboxes = try await followsService.getFollowersOfSharedInboxes(followersOf: userId, on: context)
-
-        // Calculate commentators shared inboxes.
-        let commentatorsSharedInboxes = try await self.getCommentatorsSharedInboxes(statusId: statusId, on: context)
-
-        // All combined shared inboxes.
-        let sharedInboxesSet = Array(followersSharedInboxes + commentatorsSharedInboxes + allSharedInboxes).unique()
-
-        for (index, sharedInbox) in sharedInboxesSet.enumerated() {
-            guard let sharedInbox, let sharedInboxUrl = URL(string: sharedInbox) else {
-                context.logger.warning("Status delete: '\(statusActivityPubId)' cannot be send to shared inbox url: '\(sharedInbox ?? "")'.")
-                continue
-            }
-
-            context.logger.info("[\(index + 1)/\(sharedInboxesSet.count)] Sending status delete: '\(statusActivityPubId)' to shared inbox: '\(sharedInboxUrl.absoluteString)'.")
-            let activityPubClient = ActivityPubClient(privatePemKey: privateKey, userAgent: Constants.userAgent, host: sharedInboxUrl.host)
-
-            do {
-                try await activityPubClient.delete(actorId: user.activityPubProfile, statusId: statusActivityPubId, on: sharedInboxUrl)
-            } catch {
-                context.logger.warning("Sending status delete to shared inbox error. Shared inbox url: \(sharedInboxUrl). Error: \(error).")
-            }
-        }
-    }
-
     func statuses(for userId: Int64, linkableParams: LinkableParams, on context: ExecutionContext) async throws -> LinkableResult<Status> {
         var query = Status.query(on: context.db)
             .group(.or) { group in
@@ -2856,14 +2797,14 @@ final class StatusesService: StatusesServiceType {
     }
 
     func getStatusMentions(statusId: Int64, note: String?, on context: ExecutionContext) async -> [StatusMention] {
-        let activityPubDownloadService = context.services.activityPubDownloadService
+        let activityPubDownloadUserService = context.services.activityPubDownloadUserService
         let userNames = note?.getUserNames() ?? []
         var statusMentions: [StatusMention] = []
 
         for userName in userNames {
             let newStatusMentionId = context.services.snowflakeService.generate()
 
-            let user = try? await activityPubDownloadService.downloadRemoteUserIfMissing(userName: userName, on: context)
+            let user = try? await activityPubDownloadUserService.downloadIfMissing(userName: userName, on: context)
             let statusMention = StatusMention(id: newStatusMentionId, statusId: statusId, userName: userName, userUrl: user?.url)
             statusMentions.append(statusMention)
         }
@@ -3259,14 +3200,14 @@ final class StatusesService: StatusesServiceType {
     }
 
     private func getStatusMentions(status: Status, userNames: [NoteTagDto], on context: ExecutionContext) async throws -> [StatusMention] {
-        let activityPubDownloadService = context.services.activityPubDownloadService
+        let activityPubDownloadUserService = context.services.activityPubDownloadUserService
         var statusMentions: [StatusMention] = []
 
         for userName in userNames {
             let newStatusMentionId = context.application.services.snowflakeService.generate()
 
             let user: User? = if let activityubProfile = userName.href {
-                try? await activityPubDownloadService.downloadRemoteUserIfNeeded(activityPubProfile: activityubProfile, on: context)
+                try? await activityPubDownloadUserService.downloadIfNeeded(activityPubProfile: activityubProfile, on: context)
             } else {
                 nil
             }

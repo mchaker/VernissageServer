@@ -30,7 +30,7 @@ public final class ApplicationManager {
 
         // Services mocks.
         app.services.emailsService = MockEmailsService()
-        app.services.activityPubDownloadService = MockActivityPubDownloadService()
+        app.services.activityPubDownloadUserService = MockActivityPubDownloadUserService()
 
         self.application = app
         return app

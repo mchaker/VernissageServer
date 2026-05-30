@@ -9,34 +9,24 @@ import VaporTesting
 import ActivityPubKit
 import Queues
 
-final class MockActivityPubDownloadService: ActivityPubDownloadServiceType {
-    func downloadStatus(activityPubId: String, on context: VernissageServer.ExecutionContext) async throws -> VernissageServer.Status {
-        let activityPubDownloadService = ActivityPubDownloadService()
-        return try await activityPubDownloadService.downloadStatus(activityPubId: activityPubId, on: context)
+final class MockActivityPubDownloadUserService: ActivityPubDownloadUserServiceType {
+    func downloadPerson(activityPubProfile: String, on context: VernissageServer.ExecutionContext) async throws -> ActivityPubKit.PersonDto {
+        let activityPubDownloadUserService = ActivityPubDownloadUserService()
+        return try await activityPubDownloadUserService.downloadPerson(activityPubProfile: activityPubProfile, on: context)
     }
 
-    func downloadStatusSuppressingErrors(activityPubId: String, on context: VernissageServer.ExecutionContext) async throws -> VernissageServer.Status? {
-        let activityPubDownloadService = ActivityPubDownloadService()
-        return try await activityPubDownloadService.downloadStatusSuppressingErrors(activityPubId: activityPubId, on: context)
-    }
-
-    func downloadRemoteUserIfMissing(userName: String, on context: VernissageServer.ExecutionContext) async throws -> VernissageServer.User? {
+    func downloadIfMissing(userName: String, on context: VernissageServer.ExecutionContext) async throws -> VernissageServer.User? {
         return nil
     }
 
-    func downloadRemoteUserIfNeeded(activityPubProfile: String, on context: VernissageServer.ExecutionContext) async throws -> VernissageServer.User? {
-        let activityPubDownloadService = ActivityPubDownloadService()
-        return try await activityPubDownloadService.downloadRemoteUserIfNeeded(activityPubProfile: activityPubProfile, on: context)
-    }
-
-    func downloadPerson(activityPubProfile: String, on context: VernissageServer.ExecutionContext) async throws -> ActivityPubKit.PersonDto {
-        let activityPubDownloadService = ActivityPubDownloadService()
-        return try await activityPubDownloadService.downloadPerson(activityPubProfile: activityPubProfile, on: context)
+    func downloadIfNeeded(activityPubProfile: String, on context: VernissageServer.ExecutionContext) async throws -> VernissageServer.User? {
+        let activityPubDownloadUserService = ActivityPubDownloadUserService()
+        return try await activityPubDownloadUserService.downloadIfNeeded(activityPubProfile: activityPubProfile, on: context)
     }
 
     func refreshRemoteUser(activityPubProfile: String, on context: VernissageServer.ExecutionContext) async throws -> VernissageServer.User? {
-        let activityPubDownloadService = ActivityPubDownloadService()
-        return try await activityPubDownloadService.refreshRemoteUser(activityPubProfile: activityPubProfile, on: context)
+        let activityPubDownloadUserService = ActivityPubDownloadUserService()
+        return try await activityPubDownloadUserService.refreshRemoteUser(activityPubProfile: activityPubProfile, on: context)
     }
 
     func resolveActivityPubProfile(userName: String, on context: VernissageServer.ExecutionContext) async -> String? {
@@ -47,7 +37,7 @@ final class MockActivityPubDownloadService: ActivityPubDownloadServiceType {
     }
 
     func resolveActivityPubProfile(userName: String, baseUrl: URL, on context: VernissageServer.ExecutionContext) async -> String? {
-        let activityPubDownloadService = ActivityPubDownloadService()
-        return await activityPubDownloadService.resolveActivityPubProfile(userName: userName, baseUrl: baseUrl, on: context)
+        let activityPubDownloadUserService = ActivityPubDownloadUserService()
+        return await activityPubDownloadUserService.resolveActivityPubProfile(userName: userName, baseUrl: baseUrl, on: context)
     }
 }

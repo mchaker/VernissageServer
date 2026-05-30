@@ -281,8 +281,12 @@ The list below contains definitions of the objects used for communication with V
 ### Services
 
 - ``AccountMigrationService``
-- ``ActivityPubDownloadService``
+- ``ActivityPubDownloadCollectionService``
+- ``ActivityPubDownloadStatusService``
+- ``ActivityPubDownloadUserService``
 - ``ActivityPubIncomingService``
+- ``ActivityPubOutgoingCollectionService``
+- ``ActivityPubOutgoingReportService``
 - ``ActivityPubOutgoingStatusService``
 - ``ActivityPubOutgoingUserService``
 - ``ActivityPubSignatureService``
@@ -314,7 +318,6 @@ The list below contains definitions of the objects used for communication with V
 - ``PurgeStatusesService``
 - ``QuickCaptchaService``
 - ``RelationshipsService``
-- ``ReportsService``
 - ``RolesService``
 - ``RssService``
 - ``SearchService``

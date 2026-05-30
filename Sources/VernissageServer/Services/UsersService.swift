@@ -290,13 +290,6 @@ protocol UsersServiceType: Sendable {
     /// - Throws: Errors that occur while executing the SQL query.
     func updateFollowCount(for userId: Int64, on database: Database) async throws
 
-    /// Sends a request to delete a local user to all remote servers (shared inbox), notifying them about the account removal.
-    /// - Parameters:
-    ///   - userId: The identifier of the user to be deleted (local users only).
-    ///   - context: Queue context for async operations.
-    /// - Throws: Errors related to retrieving the user, missing private key, or network errors when sending the request.
-    func deleteFromRemote(userId: Int64, on context: QueueContext) async throws
-
     /// Returns statuses owned by a user with paging and filtering.
     /// - Parameters:
     ///   - userId: User identifier.
@@ -1515,53 +1508,6 @@ final class UsersService: UsersServiceType {
         """).run()
     }
 
-    func deleteFromRemote(userId: Int64, on context: QueueContext) async throws {
-        guard let userToDelete = try await User.query(on: context.application.db)
-            .withDeleted()
-            .filter(\.$id == userId)
-            .first() else {
-            context.logger.warning("User: '\(userId)' cannot exists in database.")
-            return
-        }
-
-        guard userToDelete.isLocal else {
-            context.logger.warning("User: '\(userId)' doesn't have to be deleted from remote server (it's remote user).")
-            return
-        }
-
-        guard let privateKey = userToDelete.privateKey else {
-            context.logger.warning("User: '\(userId)' cannot be send to shared inbox (delete). Missing private key.")
-            return
-        }
-
-        let users = try await User.query(on: context.application.db)
-            .filter(\.$isLocal == false)
-            .field(\.$sharedInbox)
-            .unique()
-            .all()
-
-        let sharedInboxes = users.map({  $0.sharedInbox })
-        for (index, sharedInbox) in sharedInboxes.enumerated() {
-            guard let sharedInbox, let sharedInboxUrl = URL(string: sharedInbox) else {
-                context.logger.warning("User delete: '\(userToDelete.userName)' cannot be send to shared inbox url: '\(sharedInbox ?? "")'.")
-                continue
-            }
-
-            context.logger.info("[\(index + 1)/\(sharedInboxes.count)] Sending user delete: '\(userToDelete.userName)' to shared inbox: '\(sharedInboxUrl.absoluteString)'.")
-            let activityPubClient = ActivityPubClient(privatePemKey: privateKey, userAgent: Constants.userAgent, host: sharedInboxUrl.host)
-
-            do {
-                try await activityPubClient.delete(actorId: userToDelete.activityPubProfile, on: sharedInboxUrl)
-            } catch {
-                if error is NetworkError || error.isConnectionError {
-                    context.logger.warning("Sending user delete to shared inbox error. Shared inbox url: \(sharedInboxUrl). Error: \(error).")
-                } else {
-                    await context.logger.store("Sending user delete to shared inbox error.", error, on: context.application)
-                }
-            }
-        }
-    }
-
     func getDefaultSystemUser(on database: Database) async throws -> User? {
         guard let systemDefaultUserIdSetting = try await Setting.query(on: database)
             .filter(\.$key == SettingKey.systemDefaultUserId.rawValue)
@@ -1627,8 +1573,8 @@ final class UsersService: UsersServiceType {
             return movedToUser.id
         }
 
-        let activityPubDownloadService = context.services.activityPubDownloadService
-        if let downloadedMovedToUser = try await activityPubDownloadService.downloadRemoteUserIfNeeded(activityPubProfile: movedTo, on: context) {
+        let activityPubDownloadUserService = context.services.activityPubDownloadUserService
+        if let downloadedMovedToUser = try await activityPubDownloadUserService.downloadIfNeeded(activityPubProfile: movedTo, on: context) {
             return downloadedMovedToUser.id
         }
 

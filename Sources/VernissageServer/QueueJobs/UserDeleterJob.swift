@@ -18,6 +18,7 @@ struct UserDeleterJob: AsyncJob {
         context.logger.info("UserDeleterJob dequeued job. User (id: '\(payload)').")
         
         let usersService = context.application.services.usersService
+        let activityPubOutgoingUserService = context.application.services.activityPubOutgoingUserService
 
         do {
             context.logger.info("UserDeleterJob deleting user from local database. User (id: '\(payload)').")
@@ -36,7 +37,7 @@ struct UserDeleterJob: AsyncJob {
         }
         
         context.logger.info("UserDeleterJob deleting user (and his statuses) from remote server. User (id: '\(payload)').")
-        try await usersService.deleteFromRemote(userId: payload, on: context)
+        try await activityPubOutgoingUserService.delete(userId: payload, on: context.executionContext)
     }
 
     func error(_ context: QueueContext, _ error: Error, _ payload: Int64) async throws {
