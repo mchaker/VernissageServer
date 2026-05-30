@@ -498,13 +498,23 @@ protocol StatusesServiceType: Sendable {
 final class StatusesService: StatusesServiceType {
 
     func get(activityPubId: String, on database: Database) async throws -> Status? {
+        // Keep the activityPubId/activityPubUrl lookup split into two simple queries.
+        // A single OR predicate made PostgreSQL scan many cached Statuses rows instead
+        // of reliably using the separate indexes on activityPubId and activityPubUrl.
+        let status = try await Status.query(on: database)
+            .with(\.$user)
+            .filter(\.$activityPubId == activityPubId)
+            .first()
+        
+        if status != nil {
+            return status
+        }
+        
+        // Fall back to activityPubUrl because some remote servers expose different
+        // values for a note's ActivityPub id and public URL.
         return try await Status.query(on: database)
             .with(\.$user)
-            .group(.or) { group in
-                group
-                    .filter(\.$activityPubId == activityPubId)
-                    .filter(\.$activityPubUrl == activityPubId)
-            }
+            .filter(\.$activityPubUrl == activityPubId)
             .first()
     }
 
