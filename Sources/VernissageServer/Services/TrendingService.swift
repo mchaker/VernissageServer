@@ -192,6 +192,9 @@ final class TrendingService: TrendingServiceType {
 
         var query = TrendingStatus.query(on: database)
             .filter(\.$trendingPeriod == period)
+            .join(Status.self, on: \Status.$id == \TrendingStatus.$status.$id)
+            .join(User.self, on: \User.$id == \Status.$user.$id)
+            .filter(User.self, \.$deletedAt == nil)
             .with(\.$status) { status in
                 status.with(\.$attachments) { attachment in
                     attachment.with(\.$originalFile)
@@ -245,6 +248,8 @@ final class TrendingService: TrendingServiceType {
 
         var query = TrendingUser.query(on: database)
             .filter(\.$trendingPeriod == period)
+            .join(User.self, on: \User.$id == \TrendingUser.$user.$id)
+            .filter(User.self, \.$deletedAt == nil)
             .with(\.$user) { user in
                 user
                     .with(\.$flexiFields)

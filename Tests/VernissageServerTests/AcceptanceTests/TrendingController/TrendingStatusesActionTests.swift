@@ -51,6 +51,33 @@ extension ControllersTests {
         }
         
         @Test
+        func `Trending statuses should not be returned when status author is deleted`() async throws {
+            
+            // Arrange.
+            try await application.updateSetting(key: .showTrendingForAnonymous, value: .boolean(true))
+            
+            let user = try await application.createUser(userName: "deletedtrendingstatus")
+            let (statuses, attachments) = try await application.createStatuses(user: user, notePrefix: "Deleted trending status", amount: 1)
+            _ = try await application.createUserStatus(type: .owner, user: user, statuses: statuses)
+            try await application.createTrendingStatus(trendingPeriod: .daily, statusId: try #require(statuses.first?.id))
+            try await user.delete(on: application.db)
+            defer {
+                application.clearFiles(attachments: attachments)
+            }
+            
+            // Act.
+            let statusesFromApi = try await application.getResponse(
+                to: "/trending/statuses?limit=2&period=daily",
+                method: .GET,
+                decodeTo: LinkableResultDto<StatusDto>.self
+            )
+            
+            // Assert.
+            let deletedStatus = try #require(statuses.first)
+            #expect(statusesFromApi.data.contains(where: { $0.id == deletedStatus.stringId() }) == false, "Statuses created by deleted users should not be returned.")
+        }
+        
+        @Test
         func `Trending statuses should not be returned for unauthorized user when public access is disabled`() async throws {
             // Arrange.
             try await application.updateSetting(key: .showTrendingForAnonymous, value: .boolean(false))

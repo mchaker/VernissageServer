@@ -45,6 +45,32 @@ extension ControllersTests {
             #expect(statusesFromApi.data[0].note == "Public note 4", "First status is not visible.")
             #expect(statusesFromApi.data[1].note == "Public note 3", "Second status is not visible.")
         }
+
+        @Test
+        func `Statuses should not be returned when status author is deleted`() async throws {
+            
+            // Arrange.
+            try await application.updateSetting(key: .showEditorsChoiceForAnonymous, value: .boolean(true))
+            
+            let user = try await application.createUser(userName: "deletedfeaturedstatus")
+            let (statuses, attachments) = try await application.createStatuses(user: user, notePrefix: "Deleted featured status", amount: 1)
+            _ = try await application.createFeaturedStatus(user: user, status: try #require(statuses.first))
+            try await user.delete(on: application.db)
+            defer {
+                application.clearFiles(attachments: attachments)
+            }
+            
+            // Act.
+            let statusesFromApi = try await application.getResponse(
+                to: "/timelines/featured-statuses?limit=2",
+                method: .GET,
+                decodeTo: LinkableResultDto<StatusDto>.self
+            )
+            
+            // Assert.
+            let deletedStatus = try #require(statuses.first)
+            #expect(statusesFromApi.data.contains(where: { $0.id == deletedStatus.stringId() }) == false, "Statuses created by deleted users should not be returned.")
+        }
         
         @Test
         func `Statuses should be returned with minId`() async throws {

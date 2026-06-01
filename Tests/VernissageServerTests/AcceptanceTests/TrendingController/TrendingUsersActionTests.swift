@@ -52,6 +52,27 @@ extension ControllersTests {
         }
         
         @Test
+        func `Trending users should not be returned when user is deleted`() async throws {
+            
+            // Arrange.
+            try await application.updateSetting(key: .showTrendingForAnonymous, value: .boolean(true))
+            
+            let user = try await application.createUser(userName: "deletedtrendinguser")
+            try await application.createTrendingUser(trendingPeriod: .daily, userId: try #require(user.id))
+            try await user.delete(on: application.db)
+            
+            // Act.
+            let usersFromApi = try await application.getResponse(
+                to: "/trending/users?limit=2&period=daily",
+                method: .GET,
+                decodeTo: LinkableResultDto<UserDto>.self
+            )
+            
+            // Assert.
+            #expect(usersFromApi.data.contains(where: { $0.id == user.stringId() }) == false, "Deleted users should not be returned.")
+        }
+        
+        @Test
         func `Trending users should not be returned for unauthorized user when public access is disabled`() async throws {
             // Arrange.
             try await application.updateSetting(key: .showTrendingForAnonymous, value: .boolean(false))
