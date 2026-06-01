@@ -6,6 +6,7 @@
 
 import Vapor
 
+@_documentation(visibility: private)
 public protocol TerminateError: AbortError {
     var identifier: String { get }
     var code: String { get }

@@ -197,6 +197,8 @@ final class NotificationsService: NotificationsServiceType {
 
         var query = Notification.query(on: database)
             .filter(\.$user.$id == userId)
+            .join(User.self, on: \User.$id == \Notification.$byUser.$id)
+            .filter(User.self, \.$deletedAt == nil)
             .with(\.$byUser) { byUser in
                 byUser
                     .with(\.$flexiFields)

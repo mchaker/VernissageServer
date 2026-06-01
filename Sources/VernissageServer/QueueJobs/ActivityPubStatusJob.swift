@@ -15,7 +15,7 @@ struct ActivityPubStatusJob: AsyncJob {
 
     func dequeue(_ context: QueueContext, _ payload: ActivityPubStatusJobDataDto) async throws {
         context.logger.info("ActivityPubStatusJob dequeued job. Status event (id: '\(payload.statusActivityPubEventId)').")
-        
+
         // Get status event to proceed.
         guard let statusActivityPubEvent = try await StatusActivityPubEvent.query(on: context.application.db)
             .with(\.$status)
@@ -26,36 +26,36 @@ struct ActivityPubStatusJob: AsyncJob {
             return
         }
 
-        let activityPubService = context.application.services.activityPubService
+        let activityPubOutgoingStatusService = context.application.services.activityPubOutgoingStatusService
         switch statusActivityPubEvent.type {
         case .create:
-            try await activityPubService.create(statusActivityPubEvent: statusActivityPubEvent,
-                                                on: context.executionContext)
+            try await activityPubOutgoingStatusService.create(statusActivityPubEvent: statusActivityPubEvent,
+                                                              on: context.executionContext)
         case .update:
-            try await activityPubService.update(statusActivityPubEvent: statusActivityPubEvent,
-                                                on: context.executionContext)
+            try await activityPubOutgoingStatusService.update(statusActivityPubEvent: statusActivityPubEvent,
+                                                              on: context.executionContext)
         case .like:
-            try await activityPubService.like(statusActivityPubEvent: statusActivityPubEvent,
-                                              statusFavouriteId: payload.statusFavouriteId,
-                                              on: context.executionContext)
+            try await activityPubOutgoingStatusService.like(statusActivityPubEvent: statusActivityPubEvent,
+                                                            statusFavouriteId: payload.statusFavouriteId,
+                                                            on: context.executionContext)
         case .unlike:
-            try await activityPubService.unlike(statusActivityPubEvent: statusActivityPubEvent,
-                                                statusFavouriteId: payload.statusFavouriteId,
-                                                on: context.executionContext)
+            try await activityPubOutgoingStatusService.unlike(statusActivityPubEvent: statusActivityPubEvent,
+                                                              statusFavouriteId: payload.statusFavouriteId,
+                                                              on: context.executionContext)
         case .announce:
-            try await activityPubService.announce(statusActivityPubEvent: statusActivityPubEvent,
-                                                  activityPubReblog: payload.activityPubReblog,
-                                                  on: context.executionContext)
+            try await activityPubOutgoingStatusService.announce(statusActivityPubEvent: statusActivityPubEvent,
+                                                                activityPubReblog: payload.activityPubReblog,
+                                                                on: context.executionContext)
         case .unannounce:
-            try await activityPubService.unannounce(statusActivityPubEvent: statusActivityPubEvent,
-                                                    activityPubUnreblog: payload.activityPubUnreblog,
-                                                    on: context.executionContext)
+            try await activityPubOutgoingStatusService.unannounce(statusActivityPubEvent: statusActivityPubEvent,
+                                                                  activityPubUnreblog: payload.activityPubUnreblog,
+                                                                  on: context.executionContext)
         case .pin:
-            try await activityPubService.pin(statusActivityPubEvent: statusActivityPubEvent,
-                                             on: context.executionContext)
+            try await activityPubOutgoingStatusService.pin(statusActivityPubEvent: statusActivityPubEvent,
+                                                           on: context.executionContext)
         case .unpin:
-            try await activityPubService.unpin(statusActivityPubEvent: statusActivityPubEvent,
-                                               on: context.executionContext)
+            try await activityPubOutgoingStatusService.unpin(statusActivityPubEvent: statusActivityPubEvent,
+                                                             on: context.executionContext)
         }
     }
 

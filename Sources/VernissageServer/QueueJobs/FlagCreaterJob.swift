@@ -13,8 +13,8 @@ struct FlagCreaterJob: AsyncJob {
 
     func dequeue(_ context: QueueContext, _ payload: Int64) async throws {
         context.logger.info("FlagCreaterJob dequeued job. Report (id: '\(payload)').")
-        let reportsService = context.application.services.reportsService
-        try await reportsService.send(reportId: payload, on: context.executionContext)
+        let activityPubOutgoingReportService = context.application.services.activityPubOutgoingReportService
+        try await activityPubOutgoingReportService.send(reportId: payload, on: context.executionContext)
     }
 
     func error(_ context: QueueContext, _ error: Error, _ payload: Int64) async throws {
