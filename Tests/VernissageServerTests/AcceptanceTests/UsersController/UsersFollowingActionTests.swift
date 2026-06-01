@@ -44,6 +44,26 @@ extension ControllersTests {
             // Assert.
             #expect(following.data.count == 4, "All following users should be returned.")
         }
+
+        @Test
+        func `Following list should not return deleted followed users`() async throws {
+            // Arrange.
+            let user1 = try await application.createUser(userName: "wictorfollowingdeleted")
+            let user2 = try await application.createUser(userName: "marianfollowingdeleted")
+
+            _ = try await application.createFollow(sourceId: user1.requireID(), targetId: user2.requireID(), approved: true)
+            try await user2.delete(on: application.db)
+
+            // Act.
+            let following = try await application.getResponse(
+                to: "/users/\(user1.userName)/following",
+                method: .GET,
+                decodeTo: LinkableResultDto<UserDto>.self
+            )
+
+            // Assert.
+            #expect(following.data.isEmpty, "Deleted followed users should not be returned.")
+        }
         
         @Test
         func `Following filtered by minId should be returned`() async throws {
