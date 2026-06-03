@@ -340,7 +340,7 @@ final class TrendingService: TrendingServiceType {
                 AND \(ident: "s").\(ident: "replyToStatusId") IS NULL
                 AND \(ident: "s").\(ident: "visibility") IN (\(bind: StatusVisibility.public.rawValue), \(bind: StatusVisibility.quietPublic.rawValue))
             GROUP BY \(ident: "sf").\(ident: "statusId"), \(ident: "s").\(ident: "createdAt")
-            ORDER BY COUNT(\(ident: "sf").\(ident: "statusId")), \(ident: "s").\(ident: "createdAt") DESC
+            ORDER BY COUNT(\(ident: "sf").\(ident: "statusId")) DESC, \(ident: "s").\(ident: "createdAt") DESC
             LIMIT 1000
         """).all(decoding: TrendingAmount.self)
         
