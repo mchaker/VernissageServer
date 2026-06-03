@@ -57,6 +57,38 @@ struct TrendingServiceTests {
         let trendingStatuses = try await application.getAllTrendingStatuses()
         #expect(trendingStatuses.first(where: { $0.status.id == statuses.first?.id}) != nil, "Status should be marked as trenidng status.")
     }
+
+    @Test
+    func `More liked status should be returned first in trending statuses.`() async throws {
+        // Arrange.
+        let author = try await application.createUser(userName: "trendingstatusauthor")
+        let user1 = try await application.createUser(userName: "trendingstatusliker1")
+        let user2 = try await application.createUser(userName: "trendingstatusliker2")
+        let user3 = try await application.createUser(userName: "trendingstatusliker3")
+        let (statuses, attachments) = try await application.createStatuses(user: author, notePrefix: "Ordered trending status", amount: 2)
+        defer {
+            application.clearFiles(attachments: attachments)
+        }
+
+        let lessLikedStatus = try #require(statuses.first)
+        let moreLikedStatus = try #require(statuses.dropFirst().first)
+        try await application.favouriteStatus(user: user1, status: lessLikedStatus)
+        try await application.favouriteStatus(user: user2, status: moreLikedStatus)
+        try await application.favouriteStatus(user: user3, status: moreLikedStatus)
+
+        // Act.
+        let queueContext = application.getQueueContext(queueName: QueueName(string: "TrendingJob"))
+        await application.services.trendingService.calculateTrendingStatuses(period: .daily, on: queueContext)
+
+        // Assert.
+        let trendingStatuses = try await application.services.trendingService.statuses(
+            linkableParams: LinkableParams(maxId: nil, minId: nil, sinceId: nil, limit: 2),
+            period: .daily,
+            on: application.db
+        )
+
+        #expect(trendingStatuses.data.first?.id == moreLikedStatus.id, "Status liked twice should be first on trending statuses list.")
+    }
     
     @Test
     func `Hashtag should be calculated as trending hashtag when he have liked statuses.`() async throws {
