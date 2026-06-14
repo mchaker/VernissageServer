@@ -234,6 +234,23 @@ This status for @wify.
 """
         #expect(html == expectedHtml)
     }
+
+    @Test
+    func `Rendering text with angle brackets escapes them`() async throws {
+
+        // Arrange.
+        let text = "Followed this bell miner from perch to feed. <3 > #BirdPhotography"
+
+        // Act.
+        let html = text.html(baseAddress: "https://vernissage.com", wrapInParagraph: true)
+
+        // Assert.
+        let expectedHtml =
+"""
+<p>Followed this bell miner from perch to feed. &lt;3 &gt; <a href="https://vernissage.com/tags/BirdPhotography" rel="tag" class="mention hashtag">#BirdPhotography</a></p>
+"""
+        #expect(html == expectedHtml)
+    }
     
     @Test
     func `Rendering simple markdown to HTML`() async throws {
