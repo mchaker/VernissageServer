@@ -9,7 +9,7 @@ import Vapor
 /// Basic constants used in the system.
 public final class Constants {
     public static let name = "Vernissage"
-    public static let version = "1.38.0-buildx"
+    public static let version = "1.39.0-buildx"
     public static let applicationName = "\(Constants.name) \(Constants.version)"
     public static let userAgent = "(\(Constants.name)/\(Constants.version))"
     public static let requestMetadata = "Request body"
@@ -35,7 +35,7 @@ public final class Constants {
     public static let jrdJsonContentType: HTTPMediaType = .init(type: "application", subType: "jrd+json", parameters: ["charset": "utf-8"])
     public static let xrdXmlContentType: HTTPMediaType = .init(type: "application", subType: "xrd+xml", parameters: ["charset": "utf-8"])
     public static let activityJsonContentType: HTTPMediaType = .init(type: "application", subType: "activity+json", parameters: ["charset": "utf-8"])
-    
+
     public static let defaultPrivacyPolicy = """
 This Privacy Policy explains how **{{hostname}}** (”{{hostname}},” “we,” “our,” or “us”) processes, protects, and uses your personal data that may be collected through our website or API. It also outlines your rights regarding access, updates, and deletion of your personal information. This policy applies exclusively to the services provided by **{{hostname}}** and does not cover the practices of other companies or individuals not affiliated with us.
 
@@ -94,7 +94,7 @@ Law requirements can be different if this server is in another jurisdiction.
 
 *This document is CC-BY-SA. Originally adapted from the Mastodon privacy policy.*
 """
-    
+
     public static let defaultTermsOfService = """
 ## 1. Introduction
 
@@ -162,12 +162,12 @@ The processing of images is carried out using OpenAI technology. As per OpenAI�
 
 Your provision of personal information through the Website is governed by our privacy policy located at <a href="/privacy">privacy</a> (the "Privacy Policy").
 
-            
+
 ## 10. Severability
 
 If any provision of these Terms of Service is illegal or unenforceable under applicable law, the remainder of the provision will be amended to achieve as closely as possible the effect of the original term and all other provisions of these Terms of Service will continue in full force and effect.
 
-            
+
 ## 11. Waiver
 
 No failure to exercise, and no delay in exercising, on the part of either party, any right or any power hereunder shall operate as a waiver thereof, nor shall any single or partial exercise of any right or power hereunder preclude further exercise of that or any other right hereunder.

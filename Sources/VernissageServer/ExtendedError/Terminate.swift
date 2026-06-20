@@ -10,32 +10,33 @@ import Vapor
 ///
 ///     throw Terminate(.badRequest, code: "somethingWasWrong", reason: "Something's not quite right...")
 ///
+@_documentation(visibility: private)
 public struct Terminate: TerminateError {
 
     /// HTTP response status (400/401/403 etc.).
     public let status: HTTPResponseStatus
-    
+
     /// Custom response headers.
     public let headers: HTTPHeaders
-    
+
     /// Identifier of error group.
     public let identifier: String
-    
+
     /// Error code.
     public let code: String
-    
+
     /// Error reason.
     public let reason: String
-    
+
     /// Fixes suggested for user.
     public let suggestedFixes: [String]
 
     /// Error location in the source.
     public let sourceLocation: SourceLocation?
-    
+
     /// Current stack trace.
     public let stackTrace: [String]
-    
+
     /// Parameters that are returned together with error.
     public let parameters: [String : String]?
 

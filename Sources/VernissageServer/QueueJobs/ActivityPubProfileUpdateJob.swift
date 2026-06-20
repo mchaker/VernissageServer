@@ -13,9 +13,9 @@ struct ActivityPubProfileUpdateJob: AsyncJob {
 
     func dequeue(_ context: QueueContext, _ payload: ActivityPubProfileUpdateJobDto) async throws {
         context.logger.info("ActivityPubProfileUpdateJob dequeued job. User id: '\(payload.userId)'.")
-        
-        let activityPubProfileUpdateService = context.application.services.activityPubProfileUpdateService
-        try await activityPubProfileUpdateService.send(userId: payload.userId, on: context.executionContext)
+
+        let activityPubOutgoingUserService = context.application.services.activityPubOutgoingUserService
+        try await activityPubOutgoingUserService.update(userId: payload.userId, on: context.executionContext)
     }
 
     func error(_ context: QueueContext, _ error: Error, _ payload: ActivityPubProfileUpdateJobDto) async throws {

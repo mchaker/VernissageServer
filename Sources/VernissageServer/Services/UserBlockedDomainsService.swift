@@ -33,6 +33,26 @@ protocol UserBlockedDomainsServiceType: Sendable {
     /// - Returns: True if the domain is blocked by the user.
     /// - Throws: Database errors.
     func exists(userId: Int64, url: URL, on database: Database) async throws -> Bool
+
+    /// Checks if the domain of the actor ID is blocked by the user.
+    ///
+    /// - Parameters:
+    ///   - userActivityPubId: User's ActivityPub id who blocked the domain.
+    ///   - actorId: The ActivityPub actor ID (URL) to check.
+    ///   - context: The execution context providing services and database access.
+    /// - Returns: Returns `true` if the domain is blocked by the user, otherwise `false`.
+    /// - Throws: Throws an error if the check fails.
+    func isDomainBlockedByUser(userActivityPubId: String, actorId: String, on context: ExecutionContext) async throws -> Bool
+
+    /// Checks if the domain of the actor ID is blocked by the user.
+    ///
+    /// - Parameters:
+    ///   - userId: User who blocked the domain.
+    ///   - actorId: The ActivityPub actor ID (URL) to check.
+    ///   - context: The execution context providing services and database access.
+    /// - Returns: Returns `true` if the domain is blocked by the user, otherwise `false`.
+    /// - Throws: Throws an error if the check fails.
+    func isDomainBlockedByUser(userId: Int64, actorId: String, on context: ExecutionContext) async throws -> Bool
 }
 
 /// A service for managing domains blocked by the user.
@@ -49,6 +69,28 @@ final class UserBlockedDomainsService: UserBlockedDomainsServiceType {
             .count()
 
         return count > 0
+    }
+
+    public func isDomainBlockedByUser(userActivityPubId: String, actorId: String, on context: ExecutionContext) async throws -> Bool {
+        let usersService = context.services.usersService
+
+        guard let url = URL(string: actorId) else {
+            return false
+        }
+
+        guard let user = try await usersService.get(activityPubProfile: userActivityPubId, on: context.db) else {
+            return true
+        }
+
+        return try await self.exists(userId: user.requireID(), url: url, on: context.db)
+    }
+
+    public func isDomainBlockedByUser(userId: Int64, actorId: String, on context: ExecutionContext) async throws -> Bool {
+        guard let url = URL(string: actorId) else {
+            return false
+        }
+
+        return try await self.exists(userId: userId, url: url, on: context.db)
     }
 }
 

@@ -11,39 +11,41 @@ import Foundation
 public final class CustomErrorMiddleware: Middleware {
 
     /// Structure of `CustomErrorMiddleware` default response.
+    @_documentation(visibility: private)
     internal struct ErrorResponse: Codable {
         /// Always `true` to indicate this is a non-typical JSON response.
         var error: Bool
-        
+
         /// The reason for the error.
         var reason: String
 
         /// Identifier of error group.
         var identifier: String?
-        
+
         /// The code of the reason.
         var code: String?
-        
+
         /// List with validation failures.
         var failures: [ValidationFailure]?
-        
+
         /// Parameters that are returned together with error.
         /// It can be used for error localization.
         var parameters: [String: String]?
     }
-    
+
     /// Structure for validation error failures.
+    @_documentation(visibility: private)
     internal struct ValidationFailure: Codable {
         /// Field with validation error.
         var field: String
-        
+
         /// Validation message.
         var failure: String?
     }
-    
+
     public init() {
     }
-    
+
     /// See `Middleware`.
     public func respond(to request: Request, chainingTo next: Responder) -> EventLoopFuture<Response> {
         let response = next.respond(to: request)
@@ -56,7 +58,7 @@ public final class CustomErrorMiddleware: Middleware {
     private func body(request: Request, error: Error) -> EventLoopFuture<Response> {
 
         let logger = request.application.logger
-        
+
         // log the error
         logger.report(error: error)
 
@@ -80,12 +82,12 @@ public final class CustomErrorMiddleware: Middleware {
             parameters = terminate.parameters
         case let validation as Vapor.ValidationsError:
             reason = "Validation errors occurs."
-            
+
             failures = []
             for failure in validation.failures {
                 failures?.append(ValidationFailure(field: failure.key.stringValue, failure: failure.result.failureDescription))
             }
-            
+
             status = .badRequest
             headers = [:]
             identifier = nil
@@ -116,7 +118,7 @@ public final class CustomErrorMiddleware: Middleware {
             let body = Response.Body(string: "Oops: \(error)")
             let response = Response(status: status, headers: headers, body: body)
             response.headers.replaceOrAdd(name: .contentType, value: "text/plain; charset=utf-8")
-            
+
             return request.eventLoop.makeSucceededFuture(response)
         }
     }

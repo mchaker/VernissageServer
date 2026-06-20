@@ -10,10 +10,10 @@ import ActivityPubKit
 import Queues
 
 extension UsersController: RouteCollection {
-    
+
     @_documentation(visibility: private)
     static let uri: PathComponent = .constant("users")
-    
+
     func boot(routes: RoutesBuilder) throws {
         let usersGroup = routes
             .grouped("api")
@@ -27,7 +27,7 @@ extension UsersController: RouteCollection {
             .grouped(EventHandlerMiddleware(.usersList))
             .grouped(CacheControlMiddleware(.noStore))
             .get(use: list)
-        
+
         usersGroup
             .grouped(EventHandlerMiddleware(.usersRead))
             .grouped(CacheControlMiddleware(.noStore))
@@ -53,52 +53,52 @@ extension UsersController: RouteCollection {
             .grouped(EventHandlerMiddleware(.usersUpdate, storeRequest: false))
             .grouped(CacheControlMiddleware(.noStore))
             .post(":name", "unmove", use: unmove)
-        
+
         usersGroup
             .grouped(UserPayload.guardMiddleware())
             .grouped(XsrfTokenValidatorMiddleware())
             .grouped(EventHandlerMiddleware(.usersDelete))
             .grouped(CacheControlMiddleware(.noStore))
             .delete(":name", use: delete)
-        
+
         usersGroup
             .grouped(UserPayload.guardMiddleware())
             .grouped(XsrfTokenValidatorMiddleware())
             .grouped(EventHandlerMiddleware(.usersFollow))
             .grouped(CacheControlMiddleware(.noStore))
             .post(":name", "follow", use: follow)
-        
+
         usersGroup
             .grouped(UserPayload.guardMiddleware())
             .grouped(XsrfTokenValidatorMiddleware())
             .grouped(EventHandlerMiddleware(.usersUnfollow))
             .grouped(CacheControlMiddleware(.noStore))
             .post(":name", "unfollow", use: unfollow)
-        
+
         usersGroup
             .grouped(EventHandlerMiddleware(.usersFollowers))
             .grouped(CacheControlMiddleware(.noStore))
             .get(":name", "followers", use: followers)
-        
+
         usersGroup
             .grouped(EventHandlerMiddleware(.usersFollowing))
             .grouped(CacheControlMiddleware(.noStore))
             .get(":name", "following", use: following)
-        
+
         usersGroup
             .grouped(UserPayload.guardMiddleware())
             .grouped(XsrfTokenValidatorMiddleware())
             .grouped(EventHandlerMiddleware(.usersMute))
             .grouped(CacheControlMiddleware(.noStore))
             .post(":name", "mute", use: mute)
-        
+
         usersGroup
             .grouped(UserPayload.guardMiddleware())
             .grouped(XsrfTokenValidatorMiddleware())
             .grouped(EventHandlerMiddleware(.usersUnmute))
             .grouped(CacheControlMiddleware(.noStore))
             .post(":name", "unmute", use: unmute)
-        
+
         usersGroup
             .grouped(UserPayload.guardMiddleware())
             .grouped(UserPayload.guardIsModeratorMiddleware())
@@ -106,7 +106,7 @@ extension UsersController: RouteCollection {
             .grouped(EventHandlerMiddleware(.usersEnable))
             .grouped(CacheControlMiddleware(.noStore))
             .post(":name", "enable", use: enable)
-        
+
         usersGroup
             .grouped(UserPayload.guardMiddleware())
             .grouped(UserPayload.guardIsModeratorMiddleware())
@@ -114,21 +114,21 @@ extension UsersController: RouteCollection {
             .grouped(EventHandlerMiddleware(.usersDisable))
             .grouped(CacheControlMiddleware(.noStore))
             .post(":name", "disable", use: disable)
-        
+
         usersGroup
             .grouped(UserPayload.guardMiddleware())
             .grouped(XsrfTokenValidatorMiddleware())
             .grouped(EventHandlerMiddleware(.usersBlock))
             .grouped(CacheControlMiddleware(.noStore))
             .post(":name", "block", use: block)
-        
+
         usersGroup
             .grouped(UserPayload.guardMiddleware())
             .grouped(XsrfTokenValidatorMiddleware())
             .grouped(EventHandlerMiddleware(.usersUnblock))
             .grouped(CacheControlMiddleware(.noStore))
             .post(":name", "unblock", use: unblock)
-        
+
         usersGroup
             .grouped(UserPayload.guardMiddleware())
             .grouped(UserPayload.guardIsModeratorMiddleware())
@@ -136,7 +136,7 @@ extension UsersController: RouteCollection {
             .grouped(EventHandlerMiddleware(.usersSupporter))
             .grouped(CacheControlMiddleware(.noStore))
             .post(":name", "supporter", use: supporter)
-        
+
         usersGroup
             .grouped(UserPayload.guardMiddleware())
             .grouped(UserPayload.guardIsModeratorMiddleware())
@@ -144,7 +144,7 @@ extension UsersController: RouteCollection {
             .grouped(EventHandlerMiddleware(.usersNotSupporter))
             .grouped(CacheControlMiddleware(.noStore))
             .post(":name", "not-supporter", use: notSupporter)
-        
+
         usersGroup
             .grouped(UserPayload.guardMiddleware())
             .grouped(UserPayload.guardIsAdministratorMiddleware())
@@ -152,7 +152,7 @@ extension UsersController: RouteCollection {
             .grouped(EventHandlerMiddleware(.userRolesConnect))
             .grouped(CacheControlMiddleware(.noStore))
             .post(":name", "connect", ":role", use: connect)
-        
+
         usersGroup
             .grouped(UserPayload.guardMiddleware())
             .grouped(UserPayload.guardIsAdministratorMiddleware())
@@ -160,7 +160,7 @@ extension UsersController: RouteCollection {
             .grouped(EventHandlerMiddleware(.userRolesDisconnect))
             .grouped(CacheControlMiddleware(.noStore))
             .post(":name", "disconnect", ":role", use: disconnect)
-        
+
         usersGroup
             .grouped(UserPayload.guardMiddleware())
             .grouped(UserPayload.guardIsModeratorMiddleware())
@@ -168,7 +168,7 @@ extension UsersController: RouteCollection {
             .grouped(EventHandlerMiddleware(.userApprove))
             .grouped(CacheControlMiddleware(.noStore))
             .post(":name", "approve", use: approve)
-        
+
         usersGroup
             .grouped(UserPayload.guardMiddleware())
             .grouped(UserPayload.guardIsModeratorMiddleware())
@@ -176,7 +176,7 @@ extension UsersController: RouteCollection {
             .grouped(EventHandlerMiddleware(.userApprove))
             .grouped(CacheControlMiddleware(.noStore))
             .post(":name", "reject", use: reject)
-        
+
         usersGroup
             .grouped(UserPayload.guardMiddleware())
             .grouped(UserPayload.guardIsModeratorMiddleware())
@@ -184,7 +184,7 @@ extension UsersController: RouteCollection {
             .grouped(EventHandlerMiddleware(.userFeature))
             .grouped(CacheControlMiddleware(.noStore))
             .post(":name", "feature", use: feature)
-        
+
         usersGroup
             .grouped(UserPayload.guardMiddleware())
             .grouped(UserPayload.guardIsModeratorMiddleware())
@@ -192,7 +192,7 @@ extension UsersController: RouteCollection {
             .grouped(EventHandlerMiddleware(.userUnfeature))
             .grouped(CacheControlMiddleware(.noStore))
             .post(":name", "unfeature", use: unfeature)
-        
+
         usersGroup
             .grouped(UserPayload.guardMiddleware())
             .grouped(UserPayload.guardIsModeratorMiddleware())
@@ -200,7 +200,7 @@ extension UsersController: RouteCollection {
             .grouped(EventHandlerMiddleware(.userApprove))
             .grouped(CacheControlMiddleware(.noStore))
             .post(":name", "refresh", use: refresh)
-        
+
         usersGroup
             .grouped(UserPayload.guardMiddleware())
             .grouped(UserPayload.guardIsModeratorMiddleware())
@@ -208,7 +208,7 @@ extension UsersController: RouteCollection {
             .grouped(EventHandlerMiddleware(.usersRemoveOneTimePassword))
             .grouped(CacheControlMiddleware(.noStore))
             .post(":name", "disable-2fa", use: disableTwoFactorAuthentication)
-        
+
         usersGroup
             .grouped(EventHandlerMiddleware(.usersStatuses))
             .grouped(CacheControlMiddleware(.noStore))
@@ -307,11 +307,11 @@ struct UsersController {
         let query: String? = request.query["query"] ?? nil
         let onlyLocal: Bool = request.query["onlyLocal"] ?? false
         let onlyBlocked: Bool = request.query["onlyBlocked"] ?? false
-        
+
         let usersFromDatabaseQueryBuilder = User.query(on: request.db)
             .with(\.$flexiFields)
             .with(\.$roles)
-            
+
         if let query, query.isEmpty == false {
             let queryNormalized = query.uppercased()
 
@@ -324,7 +324,7 @@ struct UsersController {
                         .filter(\.$emailNormalized ~~ queryNormalized)
                 }
         }
-        
+
         if onlyLocal {
             usersFromDatabaseQueryBuilder
                 .filter(\.$isLocal == true)
@@ -334,14 +334,14 @@ struct UsersController {
             usersFromDatabaseQueryBuilder
                 .filter(\.$isBlocked == true)
         }
-        
+
         // Read sort direction from request query string.
         let sortDirection: DatabaseQuery.Sort.Direction = if let sortDirectionString: String = request.query["sortDirection"] {
             sortDirectionString == "ascending" ? .ascending : .descending
         } else {
             .descending
         }
-        
+
         // Read sort column from request query string.
         if let sortColumnName: String = request.query["sortColumn"] {
             switch sortColumnName {
@@ -362,10 +362,10 @@ struct UsersController {
 
         let usersFromDatabase = try await usersFromDatabaseQueryBuilder
             .paginate(PageRequest(page: page, per: size))
-        
+
         let usersService = request.application.services.usersService
         let userDtos = await usersService.convertToDtos(users: usersFromDatabase.items, attachSensitive: true, on: request.executionContext)
-                
+
         return PaginableResultDto(
             data: userDtos,
             page: usersFromDatabase.metadata.page,
@@ -373,7 +373,7 @@ struct UsersController {
             total: usersFromDatabase.metadata.total
         )
     }
-    
+
     /// User profile.
     ///
     /// The endpoint returns data about the user. This is a public endpoint
@@ -427,20 +427,20 @@ struct UsersController {
         guard let userNameOrId = request.parameters.get("name") else {
             throw UserError.userNameIsRequired
         }
-        
+
         let usersService = request.application.services.usersService
         var isProfileOwner = false
         var userFromDb: User? = nil
-        
+
         if userNameOrId.starts(with: "@") || !userNameOrId.isNumber {
             let userNameNormalized = userNameOrId.deletingPrefix("@").uppercased()
             userFromDb = try await usersService.get(userName: userNameNormalized, on: request.db)
-            
+
             let userNameFromToken = request.auth.get(UserPayload.self)?.userName
             isProfileOwner = userNameFromToken?.uppercased() == userFromDb?.userNameNormalized
         } else if let userId = Int64(userNameOrId) {
             userFromDb = try await usersService.get(id: userId, on: request.db)
-            
+
             let userIdFromToken = request.auth.get(UserPayload.self)?.id
             isProfileOwner = userIdFromToken == userFromDb?.stringId()
         }
@@ -448,7 +448,7 @@ struct UsersController {
         guard let user = userFromDb else {
             throw EntityNotFoundError.userNotFound
         }
-        
+
         let userProfile = await usersService.convertToDto(user: user,
                                                           flexiFields: user.flexiFields,
                                                           roles: userFromDb?.roles,
@@ -576,17 +576,17 @@ struct UsersController {
 
         let usersService = request.application.services.usersService
         let flexiFieldService = request.application.services.flexiFieldService
-        
+
         guard usersService.isSignedInUser(userName: userName, on: request) else {
             throw EntityForbiddenError.userForbidden
         }
-        
+
         let userDto = try request.content.decode(UserDto.self)
         try UserDto.validate(content: request)
-        
+
         let user = try await usersService.updateUser(userDto: userDto, userNameNormalized: request.userNameNormalized, on: request.executionContext)
         let flexiFields = try await flexiFieldService.getFlexiFields(for: user.requireID(), on: request.db)
-        
+
         // Enqueue job for flexi field URL validator.
         try await flexiFieldService.dispatchUrlValidator(flexiFields: flexiFields, on: request.executionContext)
 
@@ -594,7 +594,7 @@ struct UsersController {
         try await request
             .queues(.apProfileUpdate)
             .dispatch(ActivityPubProfileUpdateJob.self, ActivityPubProfileUpdateJobDto(userId: user.requireID()))
-                
+
         let userDtoAfterUpdate = await usersService.convertToDto(user: user,
                                                                  flexiFields: flexiFields,
                                                                  roles: nil,
@@ -609,34 +609,34 @@ struct UsersController {
         guard let userName = request.parameters.get("name") else {
             throw UserError.userNameIsRequired
         }
-        
+
         let usersService = request.application.services.usersService
         guard usersService.isSignedInUser(userName: userName, on: request) else {
             throw EntityForbiddenError.userForbidden
         }
-        
+
         let userMoveDto = try request.content.decode(UserMoveDto.self)
         try UserMoveDto.validate(content: request)
-        
+
         let isPasswordValid = try await usersService.verifyPassword(userName: request.userNameNormalized,
                                                                     password: userMoveDto.password,
                                                                     on: request.db)
         guard isPasswordValid else {
             throw LoginError.invalidLoginCredentials
         }
-        
+
         guard let sourceUser = try await usersService.get(userName: request.userNameNormalized, on: request.db) else {
             throw EntityNotFoundError.userNotFound
         }
-        
+
         try await request.application.services.accountMigrationService.move(sourceUser: sourceUser,
                                                                             to: userMoveDto.account,
                                                                             on: request.executionContext)
-        
+
         guard let refreshedUser = try await usersService.get(id: sourceUser.requireID(), on: request.db) else {
             throw EntityNotFoundError.userNotFound
         }
-        
+
         return await usersService.convertToDto(user: refreshedUser,
                                                flexiFields: refreshedUser.flexiFields,
                                                roles: refreshedUser.roles,
@@ -650,26 +650,26 @@ struct UsersController {
         guard let userName = request.parameters.get("name") else {
             throw UserError.userNameIsRequired
         }
-        
+
         let usersService = request.application.services.usersService
         guard usersService.isSignedInUser(userName: userName, on: request) else {
             throw EntityForbiddenError.userForbidden
         }
-        
+
         let userUnmoveDto = try request.content.decode(UserUnmoveDto.self)
         try UserUnmoveDto.validate(content: request)
-        
+
         let isPasswordValid = try await usersService.verifyPassword(userName: request.userNameNormalized,
                                                                     password: userUnmoveDto.password,
                                                                     on: request.db)
         guard isPasswordValid else {
             throw LoginError.invalidLoginCredentials
         }
-        
+
         guard let sourceUser = try await usersService.get(userName: request.userNameNormalized, on: request.db) else {
             throw EntityNotFoundError.userNotFound
         }
-        
+
         try await request.application.services.accountMigrationService.unmove(sourceUser: sourceUser,
                                                                               on: request.executionContext)
 
@@ -677,11 +677,11 @@ struct UsersController {
         try await request
             .queues(.apProfileUpdate)
             .dispatch(ActivityPubProfileUpdateJob.self, ActivityPubProfileUpdateJobDto(userId: sourceUser.requireID()))
-        
+
         guard let refreshedUser = try await usersService.get(id: sourceUser.requireID(), on: request.db) else {
             throw EntityNotFoundError.userNotFound
         }
-        
+
         return await usersService.convertToDto(user: refreshedUser,
                                                flexiFields: refreshedUser.flexiFields,
                                                roles: refreshedUser.roles,
@@ -717,7 +717,7 @@ struct UsersController {
     @Sendable
     func delete(request: Request) async throws -> HTTPStatus {
         let authorizationPayloadId = try request.requireUserId()
-        
+
         guard let userName = request.parameters.get("name") else {
             throw UserError.userNameIsRequired
         }
@@ -728,14 +728,14 @@ struct UsersController {
         guard let userFromDb = try await usersService.get(userName: userNameNormalized, on: request.db) else {
             throw EntityNotFoundError.userNotFound
         }
-        
+
         guard userFromDb.id == authorizationPayloadId || request.isModerator || request.isAdministrator else {
             throw EntityForbiddenError.userForbidden
         }
-        
+
         // Here we have soft delete function (user is marked as deleted only).
         try await usersService.delete(user: userFromDb, force: false, on: request.db)
-        
+
         // When echo queue driver is used (e.g. during unit tests) we have to execute request immediatelly.
         if let _ = request.application.queues.driver as? EchoQueuesDriver {
             let queue = UserDeleterJob()
@@ -751,10 +751,10 @@ struct UsersController {
                 .queues(.userDeleter)
                 .dispatch(UserDeleterJob.self, userFromDb.requireID(), maxRetryCount: 2)
         }
-        
+
         return HTTPStatus.ok
     }
-    
+
     /// Follow user.
     ///
     /// Checkpoint allows you to follow other user from the system.
@@ -802,46 +802,46 @@ struct UsersController {
         guard let userName = request.parameters.get("name") else {
             throw UserError.userNameIsRequired
         }
-        
+
         let authorizationPayloadId = try request.requireUserId()
         let userNameNormalized = userName.deletingPrefix("@").uppercased()
 
         guard let followedUser = try await usersService.get(userName: userNameNormalized, on: request.db) else {
             throw EntityNotFoundError.userNotFound
         }
-        
+
         guard followedUser.$movedTo.id == nil else {
             throw FollowRequestError.accountHasBeenMoved
         }
-        
+
         guard let sourceUser = try await User.find(authorizationPayloadId, on: request.db) else {
             throw Abort(.notFound)
         }
-        
+
         // We have to validate thigs for remote user (before we change something in database).
         if followedUser.isLocal == false {
             guard let _ = sourceUser.privateKey else {
                 throw ActivityPubError.privateKeyNotExists(sourceUser.activityPubProfile)
             }
-            
+
             guard let userInbox = followedUser.userInbox, let _ = URL(string: userInbox) else {
                 throw ActivityPubError.missingUserInboxUrl(sourceUser.activityPubProfile)
             }
         }
-        
+
         // Relationship is automatically approved only when user disabled manual aproving and is local.
         let approved = followedUser.isLocal && followedUser.manuallyApprovesFollowers == false
-        
+
         // Save follow in local database.
         let followId = try await followsService.follow(sourceId: sourceUser.requireID(),
                                                        targetId: followedUser.requireID(),
                                                        approved: approved,
                                                        activityId: nil,
                                                        on: request.executionContext)
-        
+
         try await usersService.updateFollowCount(for: sourceUser.requireID(), on: request.db)
         try await usersService.updateFollowCount(for: followedUser.requireID(), on: request.db)
-        
+
         // Send notification to user about follow.
         let notificationsService = request.application.services.notificationsService
         try await notificationsService.create(type: approved ? .follow : .followRequest,
@@ -850,13 +850,13 @@ struct UsersController {
                                               statusId: nil,
                                               mainStatusId: nil,
                                               on: request.executionContext)
-        
+
         // If target user is from remote server, notify remote server about follow.
         if followedUser.isLocal == false {
             guard let privateKey = sourceUser.privateKey else {
                 throw ActivityPubError.privateKeyNotExists(sourceUser.activityPubProfile)
             }
-                        
+
             try await informRemote(on: request,
                                    type: .follow,
                                    source: sourceUser.activityPubProfile,
@@ -865,7 +865,7 @@ struct UsersController {
                                    withId: followId,
                                    privateKey: privateKey)
         }
-        
+
         return try await self.relationship(sourceId: authorizationPayloadId, targetUser: followedUser, on: request)
     }
 
@@ -928,46 +928,46 @@ struct UsersController {
         guard let userName = request.parameters.get("name") else {
             throw UserError.userNameIsRequired
         }
-        
+
         let authorizationPayloadId = try request.requireUserId()
         let userNameNormalized = userName.deletingPrefix("@").uppercased()
 
         guard let followedUser = try await usersService.get(userName: userNameNormalized, on: request.db) else {
             throw EntityNotFoundError.userNotFound
         }
-        
+
         guard let sourceUser = try await User.find(authorizationPayloadId, on: request.db) else {
             throw EntityNotFoundError.userNotFound
         }
-        
+
         // We have to validate thigs for remote user (before we change something in database).
         if followedUser.isLocal == false {
             guard let _ = sourceUser.privateKey else {
                 throw ActivityPubError.privateKeyNotExists(sourceUser.activityPubProfile)
             }
-            
+
             guard let userInbox = followedUser.userInbox, let _ = URL(string: userInbox) else {
                 throw ActivityPubError.missingUserInboxUrl(followedUser.activityPubProfile)
             }
         }
-        
+
         // Delete follow from local database.
         let followId = try await followsService.unfollow(sourceId: sourceUser.requireID(), targetId: followedUser.requireID(), on: request.executionContext)
-        
+
         // User doesn't follow other user.
         guard let followId else {
             return try await self.relationship(sourceId: authorizationPayloadId, targetUser: followedUser, on: request)
         }
-        
+
         try await usersService.updateFollowCount(for: sourceUser.requireID(), on: request.db)
         try await usersService.updateFollowCount(for: followedUser.requireID(), on: request.db)
-        
+
         // If target user is from remote server, notify remote server about unfollow (in background job).
         if followedUser.isLocal == false {
             guard let privateKey = sourceUser.privateKey else {
                 throw ActivityPubError.privateKeyNotExists(sourceUser.activityPubProfile)
             }
-            
+
             try await informRemote(on: request,
                                    type: .unfollow,
                                    source: sourceUser.activityPubProfile,
@@ -989,7 +989,7 @@ struct UsersController {
                                                                              byUserId: followedUser.requireID(),
                                                                              on: request.executionContext)
                 }
-                
+
                 // We have to delete all muted user reblogs from the user timeline when the appropriate option has been selected.
                 if userMuteRequestDto.removeReblogsFromTimeline == true {
                     try await timelineService.removeReblogsFromTimeline(forUserId: authorizationPayloadId,
@@ -1000,10 +1000,10 @@ struct UsersController {
                 request.logger.warning("Removing statuses from user's timeline failed. User id: \(authorizationPayloadId), follower id: \(followedUser.stringId() ?? "unknown"). Error: \(error).")
             }
         }
-        
+
         return try await self.relationship(sourceId: authorizationPayloadId, targetUser: followedUser, on: request)
     }
-    
+
     /// List of followers.
     ///
     /// This endpoint returns information about followers.
@@ -1070,12 +1070,12 @@ struct UsersController {
         guard let userName = request.parameters.get("name") else {
             throw UserError.userNameIsRequired
         }
-                
+
         let userNameNormalized = userName.deletingPrefix("@").uppercased()
         guard let user = try await usersService.get(userName: userNameNormalized, on: request.db) else {
             throw EntityNotFoundError.userNotFound
         }
-        
+
         let executionContext = request.executionContext
         let linkableUsers = try await followsService.follows(targetId: user.requireID(),
                                                              onlyApproved: false,
@@ -1083,14 +1083,14 @@ struct UsersController {
                                                              on: executionContext)
 
         let userProfiles = await usersService.convertToDtos(users: linkableUsers.data, attachSensitive: false, on: executionContext)
-        
+
         return LinkableResultDto(
             maxId: linkableUsers.maxId,
             minId: linkableUsers.minId,
             data: userProfiles
         )
     }
-    
+
     /// List of following.
     ///
     /// This endpoint returns information about following users.
@@ -1157,12 +1157,12 @@ struct UsersController {
         guard let userName = request.parameters.get("name") else {
             throw UserError.userNameIsRequired
         }
-                
+
         let userNameNormalized = userName.deletingPrefix("@").uppercased()
         guard let user = try await usersService.get(userName: userNameNormalized, on: request.db) else {
             throw EntityNotFoundError.userNotFound
         }
-        
+
         let executionContext = request.executionContext
         let linkableUsers = try await followsService.following(sourceId: user.requireID(),
                                                                onlyApproved: false,
@@ -1170,14 +1170,14 @@ struct UsersController {
                                                                on: executionContext)
 
         let userProfiles = await usersService.convertToDtos(users: linkableUsers.data, attachSensitive: false, on: executionContext)
-                
+
         return LinkableResultDto(
             maxId: linkableUsers.maxId,
             minId: linkableUsers.minId,
             data: userProfiles
         )
     }
-    
+
     /// Mute specific user.
     ///
     /// The endpoint allows you to wipe out another user.
@@ -1232,19 +1232,19 @@ struct UsersController {
         let usersService = request.application.services.usersService
         let userMutesService = request.application.services.userMutesService
         let timelineService = request.application.services.timelineService
-        
+
         guard let userName = request.parameters.get("name") else {
             throw UserError.userNameIsRequired
         }
-        
+
         let authorizationPayloadId = try request.requireUserId()
         let userMuteRequestDto = try request.content.decode(UserMuteRequestDto.self)
         let userNameNormalized = userName.deletingPrefix("@").uppercased()
-        
+
         guard let mutedUser = try await usersService.get(userName: userNameNormalized, on: request.db) else {
             throw EntityNotFoundError.userNotFound
         }
-        
+
         // We can create in the database information about new mute.
         _ = try await userMutesService.mute(
             userId: authorizationPayloadId,
@@ -1255,24 +1255,24 @@ struct UsersController {
             muteEnd: userMuteRequestDto.muteEnd,
             on: request
         )
-        
+
         // We have to delete all muted user statuses from the user timeline when the appropriate option has been selected.
         if userMuteRequestDto.removeStatusesFromTimeline == true {
             try await timelineService.removeStatusesFromHomeTimeline(forUserId: authorizationPayloadId,
                                                                      byUserId: mutedUser.requireID(),
                                                                      on: request.executionContext)
         }
-        
+
         // We have to delete all muted user reblogs from the user timeline when the appropriate option has been selected.
         if userMuteRequestDto.removeReblogsFromTimeline == true {
             try await timelineService.removeReblogsFromTimeline(forUserId: authorizationPayloadId,
                                                                 byUserId: mutedUser.requireID(),
                                                                 on: request.executionContext)
         }
-        
+
         return try await self.relationship(sourceId: authorizationPayloadId, targetUser: mutedUser, on: request)
     }
-    
+
     /// Unmute specific user.
     ///
     /// The endpoint allows you to disable user muting.
@@ -1314,22 +1314,22 @@ struct UsersController {
     func unmute(request: Request) async throws -> RelationshipDto {
         let usersService = request.application.services.usersService
         let userMutesService = request.application.services.userMutesService
-        
+
         guard let userName = request.parameters.get("name") else {
             throw UserError.userNameIsRequired
         }
-        
+
         let authorizationPayloadId = try request.requireUserId()
         let userNameNormalized = userName.deletingPrefix("@").uppercased()
-        
+
         guard let unmutedUser = try await usersService.get(userName: userNameNormalized, on: request.db) else {
             throw EntityNotFoundError.userNotFound
         }
-        
+
         try await userMutesService.unmute(userId: authorizationPayloadId, mutedUserId: unmutedUser.requireID(), on: request)
         return try await self.relationship(sourceId: authorizationPayloadId, targetUser: unmutedUser, on: request)
     }
-    
+
     /// Enable specific user.
     ///
     /// An endpoint to unlock a user's account.
@@ -1356,22 +1356,22 @@ struct UsersController {
     @Sendable
     func enable(request: Request) async throws -> HTTPStatus {
         let usersService = request.application.services.usersService
-        
+
         guard let userName = request.parameters.get("name") else {
             throw UserError.userNameIsRequired
         }
-        
+
         let userNameNormalized = userName.deletingPrefix("@").uppercased()
         guard let user = try await usersService.get(userName: userNameNormalized, on: request.db) else {
             throw EntityNotFoundError.userNotFound
         }
-        
+
         user.isBlocked = false
         try await user.save(on: request.db)
-                
+
         return HTTPStatus.ok
     }
-    
+
     /// Disable specific user.
     ///
     /// An endpoint to lock a user's account.
@@ -1398,19 +1398,19 @@ struct UsersController {
     @Sendable
     func disable(request: Request) async throws -> HTTPStatus {
         let usersService = request.application.services.usersService
-        
+
         guard let userName = request.parameters.get("name") else {
             throw UserError.userNameIsRequired
         }
-        
+
         let userNameNormalized = userName.deletingPrefix("@").uppercased()
         guard let user = try await usersService.get(userName: userNameNormalized, on: request.db) else {
             throw EntityNotFoundError.userNotFound
         }
-        
+
         user.isBlocked = true
         try await user.save(on: request.db)
-        
+
         return HTTPStatus.ok
     }
 
@@ -1450,11 +1450,11 @@ struct UsersController {
         let followsService = request.application.services.followsService
         let timelineService = request.application.services.timelineService
         let userBlockRequestDto = try request.content.decode(UserBlockRequestDto.self)
-        
+
         guard let userName = request.parameters.get("name") else {
             throw UserError.userNameIsRequired
         }
-        
+
         let userNameNormalized = userName.deletingPrefix("@").uppercased()
         guard let blockedUser = try await usersService.get(userName: userNameNormalized, on: request.db) else {
             throw EntityNotFoundError.userNotFound
@@ -1464,12 +1464,12 @@ struct UsersController {
         guard let authorizationPayloadUser = try await usersService.get(id: authorizationPayloadId, on: request.db) else {
             throw EntityNotFoundError.userNotFound
         }
-        
+
         let userBlockedUser = try await UserBlockedUser.query(on: request.db)
             .filter(\.$user.$id == authorizationPayloadId)
             .filter(\.$blockedUser.$id == blockedUser.requireID())
             .first()
-        
+
         if userBlockedUser == nil {
             // Create a new block user if not exists.
             let newUserBlockedId = request.application.services.snowflakeService.generate()
@@ -1477,26 +1477,26 @@ struct UsersController {
                                                          userId: authorizationPayloadId,
                                                          blockedUserId: blockedUser.requireID(),
                                                          reason: userBlockRequestDto.reason)
-            
+
             try await newUserBlockedUser.save(on: request.db)
         }
-        
+
         // Delete follow from local database.
         let followId = try await followsService.unfollow(sourceId: authorizationPayloadId,
                                                          targetId: blockedUser.requireID(),
                                                          on: request.executionContext)
-        
+
         // If user follows blocked user.
         if let followId {
             try await usersService.updateFollowCount(for: authorizationPayloadId, on: request.db)
             try await usersService.updateFollowCount(for: blockedUser.requireID(), on: request.db)
-            
+
             // If target user is from remote server, notify remote server about unfollow (in background job).
             if blockedUser.isLocal == false {
                 guard let privateKey = authorizationPayloadUser.privateKey else {
                     throw ActivityPubError.privateKeyNotExists(authorizationPayloadUser.activityPubProfile)
                 }
-                
+
                 try await informRemote(on: request,
                                        type: .unfollow,
                                        source: authorizationPayloadUser.activityPubProfile,
@@ -1506,20 +1506,20 @@ struct UsersController {
                                        privateKey: privateKey)
             }
         }
-        
+
         // We have to delete all user statuses from the user timeline.
         try await timelineService.removeStatusesFromHomeTimeline(forUserId: authorizationPayloadId,
                                                                  byUserId: blockedUser.requireID(),
                                                                  on: request.executionContext)
-        
+
         // We have to delete all muted user reblogs from the user timeline.
         try await timelineService.removeReblogsFromTimeline(forUserId: authorizationPayloadId,
                                                             byUserId: blockedUser.requireID(),
                                                             on: request.executionContext)
-        
+
         return try await self.relationship(sourceId: authorizationPayloadId, targetUser: blockedUser, on: request)
     }
-    
+
     /// Unblock specific user.
     ///
     /// An endpoint to unblock a user's account.
@@ -1545,29 +1545,29 @@ struct UsersController {
     @Sendable
     func unblock(request: Request) async throws -> RelationshipDto {
         let usersService = request.application.services.usersService
-        
+
         guard let userName = request.parameters.get("name") else {
             throw UserError.userNameIsRequired
         }
-        
+
         let userNameNormalized = userName.deletingPrefix("@").uppercased()
         guard let blockedUser = try await usersService.get(userName: userNameNormalized, on: request.db) else {
             throw EntityNotFoundError.userNotFound
         }
-        
+
         let authorizationPayloadId = try request.requireUserId()
         let userBlockedUser = try await UserBlockedUser.query(on: request.db)
             .filter(\.$user.$id == authorizationPayloadId)
             .filter(\.$blockedUser.$id == blockedUser.requireID())
             .first()
-        
+
         if let userBlockedUser {
             try await userBlockedUser.delete(on: request.db)
         }
-        
+
         return try await self.relationship(sourceId: authorizationPayloadId, targetUser: blockedUser, on: request)
     }
-    
+
     /// Mark specific user as supporter.
     ///
     /// An endpoint to mark user's account as supporter.
@@ -1594,22 +1594,22 @@ struct UsersController {
     @Sendable
     func supporter(request: Request) async throws -> HTTPStatus {
         let usersService = request.application.services.usersService
-        
+
         guard let userName = request.parameters.get("name") else {
             throw UserError.userNameIsRequired
         }
-        
+
         let userNameNormalized = userName.deletingPrefix("@").uppercased()
         guard let user = try await usersService.get(userName: userNameNormalized, on: request.db) else {
             throw EntityNotFoundError.userNotFound
         }
-        
+
         user.isSupporter = true
         try await user.save(on: request.db)
-                
+
         return HTTPStatus.ok
     }
-    
+
     /// Mark specific user as not supporter.
     ///
     /// An endpoint to mark user's account as not supporter.
@@ -1636,23 +1636,23 @@ struct UsersController {
     @Sendable
     func notSupporter(request: Request) async throws -> HTTPStatus {
         let usersService = request.application.services.usersService
-        
+
         guard let userName = request.parameters.get("name") else {
             throw UserError.userNameIsRequired
         }
-        
+
         let userNameNormalized = userName.deletingPrefix("@").uppercased()
         guard let user = try await usersService.get(userName: userNameNormalized, on: request.db) else {
             throw EntityNotFoundError.userNotFound
         }
-        
+
         user.isSupporter = false
         user.isSupporterFlagEnabled = false
         try await user.save(on: request.db)
-        
+
         return HTTPStatus.ok
     }
-    
+
     /// Connect role to the user.
     ///
     /// The endpoint allows administrator to connect user to specific role.
@@ -1684,16 +1684,16 @@ struct UsersController {
         guard let userName = request.parameters.get("name") else {
             throw UserError.userNameIsRequired
         }
-        
+
         guard let roleCode = request.parameters.get("role") else {
             throw UserError.roleIsRequired
         }
-        
+
         let userNameNormalized = userName.deletingPrefix("@").uppercased()
         guard let user = try await usersService.get(userName: userNameNormalized, on: request.db) else {
             throw EntityNotFoundError.userNotFound
         }
-        
+
         let role = try await Role.query(on: request.db)
             .filter(\.$code == roleCode)
             .first()
@@ -1701,7 +1701,7 @@ struct UsersController {
         guard let role = role else {
             throw EntityNotFoundError.roleNotFound
         }
-        
+
         let userRoleId = request.application.services.snowflakeService.generate()
         let userRole = try UserRole(id: userRoleId, userId: user.requireID(), roleId: role.requireID())
         try await userRole.save(on: request.db)
@@ -1740,16 +1740,16 @@ struct UsersController {
         guard let userName = request.parameters.get("name") else {
             throw UserError.userNameIsRequired
         }
-        
+
         guard let roleCode = request.parameters.get("role") else {
             throw UserError.roleIsRequired
         }
-        
+
         let userNameNormalized = userName.deletingPrefix("@").uppercased()
         guard let user = try await usersService.get(userName: userNameNormalized, on: request.db) else {
             throw EntityNotFoundError.userNotFound
         }
-        
+
         let role = try await Role.query(on: request.db)
             .filter(\.$code == roleCode)
             .first()
@@ -1762,7 +1762,7 @@ struct UsersController {
 
         return HTTPStatus.ok
     }
-    
+
     /// Approve user.
     ///
     /// If registration that requires acceptance is enabled this endpoint
@@ -1793,24 +1793,24 @@ struct UsersController {
         guard let userName = request.parameters.get("name") else {
             throw UserError.userNameIsRequired
         }
-        
+
         let userNameNormalized = userName.deletingPrefix("@").uppercased()
         guard let user = try await usersService.get(userName: userNameNormalized, on: request.db) else {
             throw EntityNotFoundError.userNotFound
         }
-        
+
         if user.isApproved == false {
             user.isApproved = true
             try await user.save(on: request.db)
         }
-        
+
         // Send email about account approve.
         let emailsService = request.application.services.emailsService
         try await emailsService.dispatchApproveAccountEmail(user: user, on: request)
 
         return HTTPStatus.ok
     }
-    
+
     /// Reject user.
     ///
     /// If registration that requires acceptance is enabled this endpoint
@@ -1842,12 +1842,12 @@ struct UsersController {
         guard let userName = request.parameters.get("name") else {
             throw UserError.userNameIsRequired
         }
-        
+
         let userNameNormalized = userName.deletingPrefix("@").uppercased()
         guard let user = try await usersService.get(userName: userNameNormalized, on: request.db) else {
             throw EntityNotFoundError.userNotFound
         }
-        
+
         guard user.isApproved == false else {
             throw UserError.userAlreadyApproved
         }
@@ -1858,10 +1858,10 @@ struct UsersController {
         // Send email about account reject.
         let emailsService = request.application.services.emailsService
         try await emailsService.dispatchRejectAccountEmail(user: user, on: request)
-        
+
         return HTTPStatus.ok
     }
-    
+
     /// Refresh user data.
     ///
     /// Thanks to this endpoint we can force to refresh user data from
@@ -1888,25 +1888,25 @@ struct UsersController {
     @Sendable
     func refresh(request: Request) async throws -> HTTPResponseStatus {
         let usersService = request.application.services.usersService
-        let searchService = request.application.services.searchService
+        let activityPubDownloadUserService = request.application.services.activityPubDownloadUserService
 
         guard let userName = request.parameters.get("name") else {
             throw UserError.userNameIsRequired
         }
-        
+
         let userNameNormalized = userName.deletingPrefix("@").uppercased()
         guard let user = try await usersService.get(userName: userNameNormalized, on: request.db) else {
             throw EntityNotFoundError.userNotFound
         }
-        
+
         guard !user.isLocal else {
             return HTTPStatus.ok
         }
 
-        _ = try? await searchService.downloadRemoteUser(activityPubProfile: user.activityPubProfile, on: request.executionContext)
+        _ = try? await activityPubDownloadUserService.downloadIfNeeded(activityPubProfile: user.activityPubProfile, on: request.executionContext)
         return HTTPStatus.ok
     }
-    
+
     /// Exposing list of statuses.
     ///
     /// An endpoint that returns a list of statuses added to the system by a given user.
@@ -2025,20 +2025,20 @@ struct UsersController {
         let linkableParams = request.linkableParams()
         let authorizationPayloadId = request.userId
         let onlyPinned: Bool = request.query["onlyPinned"] ?? false
-        
+
         guard let userName = request.parameters.get("name") else {
             throw UserError.userNameIsRequired
         }
-        
+
         let userNameNormalized = userName.deletingPrefix("@").uppercased()
         guard let user = try await usersService.get(userName: userNameNormalized, on: request.db) else {
             throw EntityNotFoundError.userNotFound
         }
-        
+
         guard let userId = try? user.requireID() else {
             throw EntityNotFoundError.userNotFound
         }
-        
+
         if authorizationPayloadId == userId {
             // For signed in users we have to show all kind of statuses on their own profiles (public/followers/mentioned).
             let linkableStatuses = try await usersService.ownStatuses(for: userId,
@@ -2046,7 +2046,7 @@ struct UsersController {
                                                                       onlyPinned: onlyPinned,
                                                                       on: request.executionContext)
             let statusDtos = await statusesService.convertToDtos(statuses: linkableStatuses.data, on: request.executionContext)
-            
+
             return LinkableResultDto(
                 maxId: linkableStatuses.maxId,
                 minId: linkableStatuses.minId,
@@ -2059,7 +2059,7 @@ struct UsersController {
                                                                          onlyPinned: onlyPinned,
                                                                          on: request.executionContext)
             let statusDtos = await statusesService.convertToDtos(statuses: linkableStatuses.data, on: request.executionContext)
-            
+
             return LinkableResultDto(
                 maxId: linkableStatuses.maxId,
                 minId: linkableStatuses.minId,
@@ -2067,7 +2067,7 @@ struct UsersController {
             )
         }
     }
-    
+
     /// Feature specific user.
     ///
     /// This endpoint is used to add the user to a special list of featured users.
@@ -2118,24 +2118,24 @@ struct UsersController {
     func feature(request: Request) async throws -> UserDto {
         let usersService = request.application.services.usersService
         let authorizationPayloadId = try request.requireUserId()
-        
+
         guard let userName = request.parameters.get("name") else {
             throw UserError.userNameIsRequired
         }
-        
+
         let userNameNormalized = userName.deletingPrefix("@").uppercased()
         guard let user = try await usersService.get(userName: userNameNormalized, on: request.db) else {
             throw EntityNotFoundError.userNotFound
         }
-        
+
         guard let userId = try? user.requireID() else {
             throw EntityNotFoundError.userNotFound
         }
-        
+
         guard let _ = try await usersService.get(userName: userNameNormalized, on: request.db) else {
             throw EntityNotFoundError.userNotFound
         }
-        
+
         if try await FeaturedUser.query(on: request.db)
             .filter(\.$featuredUser.$id == userId)
             .first() == nil {
@@ -2143,7 +2143,7 @@ struct UsersController {
             let featuredUser = FeaturedUser(id: id, featuredUserId: userId, userId: authorizationPayloadId)
             try await featuredUser.save(on: request.db)
         }
-        
+
         // Prepare and return user.
         let userFromDatabaseAfterFeature = try await usersService.get(id: userId, on: request.db)
         guard let userFromDatabaseAfterFeature else {
@@ -2158,7 +2158,7 @@ struct UsersController {
                                                           on: request.executionContext)
         return userProfile
     }
-    
+
     /// Unfeature specific user.
     ///
     /// This endpoint is used to delete  the user from a special list of featured users.
@@ -2208,36 +2208,36 @@ struct UsersController {
     @Sendable
     func unfeature(request: Request) async throws -> UserDto {
         let usersService = request.application.services.usersService
-        
+
         guard let userName = request.parameters.get("name") else {
             throw UserError.userNameIsRequired
         }
-        
+
         let userNameNormalized = userName.deletingPrefix("@").uppercased()
         guard let user = try await usersService.get(userName: userNameNormalized, on: request.db) else {
             throw EntityNotFoundError.userNotFound
         }
-        
+
         guard let userId = try? user.requireID() else {
             throw EntityNotFoundError.userNotFound
         }
-        
+
         guard let _ = try await usersService.get(userName: userNameNormalized, on: request.db) else {
             throw EntityNotFoundError.userNotFound
         }
-        
+
         if let featureUser = try await FeaturedUser.query(on: request.db)
             .filter(\.$featuredUser.$id == userId)
             .first() {
             try await featureUser.delete(on: request.db)
         }
-        
+
         // Prepare and return user.
         let userFromDatabaseAfterFeature = try await usersService.get(id: userId, on: request.db)
         guard let userFromDatabaseAfterFeature else {
             throw EntityNotFoundError.statusNotFound
         }
-        
+
         let userProfile = await usersService.convertToDto(user: userFromDatabaseAfterFeature,
                                                           flexiFields: userFromDatabaseAfterFeature.flexiFields,
                                                           roles: nil,
@@ -2246,7 +2246,7 @@ struct UsersController {
                                                           on: request.executionContext)
         return userProfile
     }
-    
+
     /// Disable two factor token authorization (TOTP).
     ///
     /// Administrators and moderators can disable OTP when user doesn't have their codes.
@@ -2272,39 +2272,39 @@ struct UsersController {
     @Sendable
     func disableTwoFactorAuthentication(request: Request) async throws -> HTTPStatus {
         let usersService = request.application.services.usersService
-        
+
         guard let userName = request.parameters.get("name") else {
             throw UserError.userNameIsRequired
         }
-        
+
         let userNameNormalized = userName.deletingPrefix("@").uppercased()
         guard let user = try await usersService.get(userName: userNameNormalized, on: request.db) else {
             throw EntityNotFoundError.userNotFound
         }
-        
+
         guard let userId = try? user.requireID() else {
             throw EntityNotFoundError.userNotFound
         }
-        
+
         guard let _ = try await usersService.get(userName: userNameNormalized, on: request.db) else {
             throw EntityNotFoundError.userNotFound
         }
-        
+
         let twoFactorTokensService = request.application.services.twoFactorTokensService
         guard let twoFactorToken = try await twoFactorTokensService.find(for: userId, on: request.db) else {
             throw EntityNotFoundError.twoFactorTokenNotFound
         }
-        
+
         try await request.db.transaction { database in
             user.twoFactorEnabled = false
 
             try await twoFactorToken.delete(on: database)
             try await user.save(on: database)
         }
-        
+
         return HTTPStatus.ok
     }
-        
+
     private func relationship(sourceId: Int64, targetUser: User, on request: Request) async throws -> RelationshipDto {
         let targetUserId = try targetUser.requireID()
         let relationshipsService = request.application.services.relationshipsService
@@ -2322,7 +2322,7 @@ struct UsersController {
             mutedNotifications: false
         )
     }
-    
+
     private func informRemote(on request: Request,
                               type: ActivityPubFollowRequestDto.FollowRequestType,
                               source: String,
@@ -2333,7 +2333,7 @@ struct UsersController {
         guard let sharedInbox, let sharedInboxUrl = URL(string: sharedInbox) else {
             return
         }
-        
+
         let activityPubFollowRequestDto = ActivityPubFollowRequestDto(type: type,
                                                                       source: source,
                                                                       target: target,

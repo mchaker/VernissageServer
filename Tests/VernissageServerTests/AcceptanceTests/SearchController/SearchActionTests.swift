@@ -76,6 +76,35 @@ extension ControllersTests {
             #expect((searchResultDto.users?.count ?? 0) > 0, "At least one user should be returned by the search.")
             #expect(searchResultDto.users?.first(where: { $0.userName == "admin" }) != nil, "Admin account should be returned.")
         }
+
+        @Test
+        func `Search result should be returned when cached remote profile url has been specified`() async throws {
+            // Arrange.
+            _ = try await application.createUser(userName: "cachedremotefinder")
+            let activityPubProfile = "https://remote.example/actors/cachedremote"
+            let remoteUser = try await application.createUser(userName: "cachedremote", isLocal: false)
+            remoteUser.url = "https://remote.example/@cachedremote"
+            remoteUser.account = "cachedremote@remote.example"
+            remoteUser.activityPubProfile = activityPubProfile
+            remoteUser.userNameNormalized = remoteUser.userName.uppercased()
+            remoteUser.accountNormalized = remoteUser.account.uppercased()
+            remoteUser.activityPubProfileNormalized = remoteUser.activityPubProfile.uppercased()
+            remoteUser.queryNormalized = "\(remoteUser.name?.uppercased() ?? "") \(remoteUser.userNameNormalized) \(remoteUser.accountNormalized) \(remoteUser.activityPubProfileNormalized)"
+            try await remoteUser.update(on: application.db)
+
+            // Act.
+            let searchResultDto = try await application.getResponse(
+                as: .user(userName: "cachedremotefinder", password: "p@ssword"),
+                to: "/search?query=https%3A%2F%2Fremote.example%2Factors%2Fcachedremote&type=users",
+                version: .v1,
+                decodeTo: SearchResultDto.self
+            )
+
+            // Assert.
+            #expect(searchResultDto.users != nil, "Users should be returned.")
+            #expect(searchResultDto.users?.contains(where: { $0.activityPubProfile == activityPubProfile && $0.isLocal == false }) == true,
+                    "Cached remote account should be returned from local database.")
+        }
         
         @Test
         func `Search result should be returned when existing hashtag has been specidfied`() async throws {
@@ -118,6 +147,47 @@ extension ControllersTests {
             // Assert.
             #expect(searchResultDto.statuses != nil, "Hashtags should be returned.")
             #expect((searchResultDto.statuses?.count ?? 0) >= 3, "At least two statuses should be returned by the search.")
+        }
+
+        @Test
+        func `Search result should be returned when cached remote status url has been specified`() async throws {
+            // Arrange.
+            let user = try await application.createUser(userName: "cachedstatusfinder")
+            let remoteUser = try await application.createUser(userName: "cachedstatusauthor", isLocal: false)
+            remoteUser.url = "http://remote.example/@cachedstatusauthor"
+            remoteUser.account = "cachedstatusauthor@remote.example"
+            remoteUser.activityPubProfile = "http://remote.example/actors/cachedstatusauthor"
+            remoteUser.userNameNormalized = remoteUser.userName.uppercased()
+            remoteUser.accountNormalized = remoteUser.account.uppercased()
+            remoteUser.activityPubProfileNormalized = remoteUser.activityPubProfile.uppercased()
+            remoteUser.queryNormalized = "\(remoteUser.name?.uppercased() ?? "") \(remoteUser.userNameNormalized) \(remoteUser.accountNormalized) \(remoteUser.activityPubProfileNormalized)"
+            try await remoteUser.update(on: application.db)
+
+            let activityPubUrl = "http://remote.example/@cachedstatusauthor/cached-status"
+            let status = Status(id: await ApplicationManager.shared.generateId(),
+                                isLocal: false,
+                                userId: try remoteUser.requireID(),
+                                note: "Cached remote status",
+                                activityPubId: "http://remote.example/actors/cachedstatusauthor/statuses/cached-status",
+                                activityPubUrl: activityPubUrl,
+                                application: nil,
+                                categoryId: nil,
+                                visibility: .public,
+                                publishedAt: Date())
+            try await status.save(on: application.db)
+
+            // Act.
+            let searchResultDto = try await application.getResponse(
+                as: .user(userName: user.userName, password: "p@ssword"),
+                to: "/search?query=http%3A%2F%2Fremote.example%2F%40cachedstatusauthor%2Fcached-status&type=statuses",
+                version: .v1,
+                decodeTo: SearchResultDto.self
+            )
+
+            // Assert.
+            #expect(searchResultDto.statuses != nil, "Statuses should be returned.")
+            #expect(searchResultDto.statuses?.contains(where: { $0.activityPubUrl == activityPubUrl && $0.isLocal == false }) == true,
+                    "Cached remote status should be returned from local database.")
         }
 
         @Test

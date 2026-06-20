@@ -116,7 +116,7 @@ protocol UsersServiceType: Sendable {
     /// - Returns: Authenticated ``User``.
     /// - Throws: Authentication or database errors.
     func login(userNameOrEmail: String, password: String, isMachineTrusted: Bool, on request: Request) async throws -> User
-    
+
     /// Verifies whether provided password matches stored password for user.
     /// - Parameters:
     ///   - userName: User name.
@@ -282,20 +282,13 @@ protocol UsersServiceType: Sendable {
     /// - Parameter email: Email address.
     /// - Returns: MD5 hash string.
     func createGravatarHash(from email: String) -> String
-    
+
     /// Updates the user's follower count (`followersCount`) and following count (`followingCount`) in the database.
     /// - Parameters:
     ///   - userId: The identifier of the user whose counters should be updated.
     ///   - database: Database context.
     /// - Throws: Errors that occur while executing the SQL query.
     func updateFollowCount(for userId: Int64, on database: Database) async throws
-
-    /// Sends a request to delete a local user to all remote servers (shared inbox), notifying them about the account removal.
-    /// - Parameters:
-    ///   - userId: The identifier of the user to be deleted (local users only).
-    ///   - context: Queue context for async operations.
-    /// - Throws: Errors related to retrieving the user, missing private key, or network errors when sending the request.
-    func deleteFromRemote(userId: Int64, on context: QueueContext) async throws
 
     /// Returns statuses owned by a user with paging and filtering.
     /// - Parameters:
@@ -339,7 +332,7 @@ final class UsersService: UsersServiceType {
             .with(\.$roles)
             .first()
     }
-    
+
     func get(userName: String, on database: Database) async throws -> User? {
         let userNameNormalized = userName.uppercased()
         return try await User.query(on: database)
@@ -369,7 +362,7 @@ final class UsersService: UsersServiceType {
             .with(\.$roles)
             .first()
     }
-    
+
     func getModerators(on database: Database) async throws -> [User] {
         let moderators = try await User.query(on: database)
             .join(UserRole.self, on: \User.$id == \UserRole.$user.$id)
@@ -380,10 +373,10 @@ final class UsersService: UsersServiceType {
             }
             .unique()
             .all()
-        
+
         return moderators.uniqued { user in user.id }
     }
-    
+
     func getPersonDto(for user: User, on context: ExecutionContext) async throws -> PersonDto {
         let applicationSettings = context.application.settings.cached
         let baseAddress = applicationSettings?.baseAddress ?? ""
@@ -391,9 +384,9 @@ final class UsersService: UsersServiceType {
         let hashtags = try await user.$hashtags.get(on: context.db)
         let aliases = try await user.$aliases.get(on: context.db)
         let published: String? = user.isLocal ? user.createdAt?.toISO8601String() : user.publishedAt?.toISO8601String()
-        
+
         let movedToActivityPubProfile = try await user.$movedTo.get(on: context.db)?.activityPubProfile
-        
+
         let personDto = PersonDto(id: user.activityPubProfile,
                                   following: "\(user.activityPubProfile)/following",
                                   followers: "\(user.activityPubProfile)/followers",
@@ -418,10 +411,10 @@ final class UsersService: UsersServiceType {
                                   tag: hashtags.map({ PersonHashtagDto(type: .hashtag, name: $0.hashtag, href: "\(baseAddress)/tags/\($0.hashtag)") }),
                                   featured: "\(user.activityPubProfile)/featured"
         )
-        
+
         return personDto
     }
-    
+
     func convertToDto(user: User,
                       flexiFields: [FlexiField]?,
                       roles: [Role]?,
@@ -429,7 +422,7 @@ final class UsersService: UsersServiceType {
                       attachFeatured: Bool,
                       on context: ExecutionContext) async -> UserDto {
         let isFeatured = attachFeatured ? (try? await self.userIsFeatured(userId: user.requireID(), on: context)) : nil
-        
+
         let userProfile = await self.getUserProfile(user: user,
                                                     flexiFields: flexiFields,
                                                     roles: roles,
@@ -438,12 +431,12 @@ final class UsersService: UsersServiceType {
                                                     on: context)
         return userProfile
     }
-    
+
     func convertToDtos(users: [User], attachSensitive: Bool, on context: ExecutionContext) async -> [UserDto] {
         let userIds = users.compactMap { $0.id }
         let featuredUsers = try? await self.usersAreFeatured(userIds: userIds, on: context)
 
-        let userDtos = await users.asyncMap { user in            
+        let userDtos = await users.asyncMap { user in
             let userProfile = await self.getUserProfile(user: user,
                                                         flexiFields: user.flexiFields,
                                                         roles: user.roles,
@@ -452,10 +445,10 @@ final class UsersService: UsersServiceType {
                                                         on: context)
             return userProfile
         }
-        
+
         return userDtos
     }
-    
+
     func login(userNameOrEmail: String, password: String, isMachineTrusted: Bool, on request: Request) async throws -> User {
 
         let failedLoginsService = request.application.services.failedLoginsService
@@ -463,7 +456,7 @@ final class UsersService: UsersServiceType {
         guard loginAttempsExceeded == false else {
             throw LoginError.loginAttemptsExceeded
         }
-        
+
         let userNameOrEmailNormalized = userNameOrEmail.uppercased()
         let userFromDb = try await User.query(on: request.db).group(.or) { userNameGroup in
             userNameGroup.filter(\.$userNameNormalized == userNameOrEmailNormalized)
@@ -474,7 +467,7 @@ final class UsersService: UsersServiceType {
             try await failedLoginsService.saveFailedLoginAttempt(userName: userNameOrEmail, on: request)
             throw LoginError.invalidLoginCredentials
         }
-        
+
         guard let salt = user.salt else {
             throw LoginError.saltCorrupted
         }
@@ -488,25 +481,25 @@ final class UsersService: UsersServiceType {
         if user.isBlocked {
             throw LoginError.userAccountIsBlocked
         }
-        
+
         if user.isApproved == false {
             throw LoginError.userAccountIsNotApproved
         }
-        
+
         if user.twoFactorEnabled && isMachineTrusted == false {
             guard let token = request.headers.first(name: Constants.twoFactorTokenHeader) else {
                 throw LoginError.twoFactorTokenNotFound
             }
-            
+
             if token.isEmpty {
                 throw LoginError.twoFactorTokenNotFound
             }
-            
+
             let twoFactorTokensService = request.application.services.twoFactorTokensService
             guard let twoFactorToken = try await twoFactorTokensService.find(for: user.requireID(), on: request.db) else {
                 throw EntityNotFoundError.twoFactorTokenNotFound
             }
-            
+
             guard try twoFactorTokensService.validate(token, twoFactorToken: twoFactorToken, allowBackupCode: true) else {
                 throw TwoFactorTokenError.tokenNotValid
             }
@@ -514,10 +507,10 @@ final class UsersService: UsersServiceType {
 
         user.lastLoginDate = Date()
         try await user.save(on: request.db)
-        
+
         return user
     }
-    
+
     func verifyPassword(userName: String, password: String, on database: Database) async throws -> Bool {
         let userNameNormalized = userName.deletingPrefix("@").uppercased()
         guard let user = try await User.query(on: database)
@@ -525,30 +518,30 @@ final class UsersService: UsersServiceType {
             .first() else {
             return false
         }
-        
+
         guard let salt = user.salt else {
             throw LoginError.saltCorrupted
         }
-        
+
         let passwordHash = try Password.hash(password, withSalt: salt)
         return user.password == passwordHash
     }
-    
+
     func login(authenticateToken: String, on request: Request) async throws -> User {
         let externalUser = try await ExternalUser
             .query(on: request.db)
             .with(\.$user)
             .filter(\.$authenticationToken == authenticateToken)
             .first()
-        
+
         guard let externalUser = externalUser else {
             throw OpenIdConnectError.invalidAuthenticateToken
         }
-        
+
         guard let tokenCreatedAt = externalUser.tokenCreatedAt else {
             throw OpenIdConnectError.authenticateTokenExpirationDateNotFound
         }
-        
+
         if tokenCreatedAt.addingTimeInterval(60) < Date() {
             throw OpenIdConnectError.autheticateTokenExpired
         }
@@ -556,7 +549,7 @@ final class UsersService: UsersServiceType {
         if externalUser.user.isBlocked {
             throw OpenIdConnectError.userAccountIsBlocked
         }
-        
+
         let user = externalUser.user
 
         user.lastLoginDate = Date()
@@ -604,7 +597,7 @@ final class UsersService: UsersServiceType {
         if hoursDifference > 6 {
             throw ForgotPasswordError.tokenExpired
         }
-                
+
         do {
             user.forgotPasswordGuid = nil
             user.forgotPasswordDate = nil
@@ -614,7 +607,7 @@ final class UsersService: UsersServiceType {
 
             user.salt = salt
             user.password = try Password.hash(password, withSalt: salt)
-            
+
             try await user.save(on: request.db)
         } catch {
             throw ForgotPasswordError.passwordNotHashed
@@ -631,7 +624,7 @@ final class UsersService: UsersServiceType {
         guard let salt = user.salt else {
             throw ChangePasswordError.saltCorrupted
         }
-        
+
         let currentPasswordHash = try Password.hash(currentPassword, withSalt: salt)
         if user.password != currentPasswordHash {
             throw ChangePasswordError.invalidOldPassword
@@ -653,19 +646,19 @@ final class UsersService: UsersServiceType {
 
         try await user.update(on: request.db)
     }
-    
+
     func changeEmail(userId: Int64, email: String, on request: Request) async throws {
         let userFromDb = try await User.find(userId, on: request.db)
-        
+
         guard let user = userFromDb else {
             throw EntityNotFoundError.userNotFound
         }
-        
+
         user.email = email
         user.emailNormalized = email.uppercased()
         user.emailWasConfirmed = false
         user.emailConfirmationGuid = UUID.init().uuidString
-        
+
         try await user.update(on: request.db)
     }
 
@@ -707,7 +700,7 @@ final class UsersService: UsersServiceType {
 
         return false
     }
-    
+
     func isSignedInUser(userName: String, on request: Request) -> Bool {
         let userNameNormalized = userName.deletingPrefix("@").uppercased()
         let userNameFromToken = request.userName
@@ -716,10 +709,10 @@ final class UsersService: UsersServiceType {
         guard isProfileOwner else {
             return false
         }
-        
+
         return true
     }
-    
+
     func validateUserName(userName: String, on request: Request) async throws {
         let userNameNormalized = userName.uppercased()
         let user = try await User.query(on: request.db).filter(\.$userNameNormalized == userNameNormalized).first()
@@ -734,18 +727,18 @@ final class UsersService: UsersServiceType {
         if user != nil {
             throw RegisterError.emailIsAlreadyConnected
         }
-        
+
         guard let emailDomain = emailNormalized.split(separator: "@").last else {
             return
         }
-        
+
         let emailDomainString = String(emailDomain)
         let disposableEmail = try await DisposableEmail.query(on: request.db).filter(\.$domainNormalized == emailDomainString).first()
         if disposableEmail != nil {
             throw RegisterError.disposableEmailCannotBeUsed
         }
     }
-    
+
     func updateUser(userDto: UserDto, userNameNormalized: String, on context: ExecutionContext) async throws -> User {
         let userFromDb = try await self.get(userName: userNameNormalized, on: context.db)
 
@@ -759,23 +752,23 @@ final class UsersService: UsersServiceType {
         user.manuallyApprovesFollowers = userDto.manuallyApprovesFollowers ?? false
         user.includePublicPostsInSearchEngines = userDto.includePublicPostsInSearchEngines ?? false
         user.includeProfilePageInSearchEngines = userDto.includeProfilePageInSearchEngines ?? false
-        
+
         if let locale = userDto.locale {
             user.locale = locale
         }
 
         // Save user data.
         try await user.update(on: context.db)
-        
+
         // Update flexi-fields.
         try await self.update(flexiFields: userDto.fields ?? [], for: user, on: context)
-        
+
         // Update hashtags.
         try await self.update(hashtags: userDto.bio, for: user, on: context)
-        
+
         return user
     }
-    
+
     func update(user: User,
                 basedOn person: PersonDto,
                 withAvatarFileName avatarFileName: String?,
@@ -783,7 +776,7 @@ final class UsersService: UsersServiceType {
                 on context: ExecutionContext) async throws -> User {
         let url = try person.getUrl()
         let remoteUserName = try person.getRemoteUserName()
-        
+
         user.url = url
         user.userName = remoteUserName
         user.account = remoteUserName
@@ -800,13 +793,13 @@ final class UsersService: UsersServiceType {
         user.$movedTo.id = try await self.resolveMovedToUserId(from: person, on: context)
         user.publishedAt = person.published?.fromISO8601String()
         user.type = person.getUserType()
-        
+
         user.userNameNormalized = user.userName.uppercased()
         user.accountNormalized = user.account.uppercased()
-        
+
         // Save user data.
         try await user.update(on: context.db)
-        
+
         // Update flexi-fields (only include PropertyValue attachments).
         if let flexiFieldsDto = person.flexiFields()?.map({ FlexiFieldDto(key: $0.name, value: $0.value, baseAddress: "") }) {
             try await self.update(flexiFields: flexiFieldsDto, for: user, on: context)
@@ -864,7 +857,7 @@ final class UsersService: UsersServiceType {
         let url = try person.getUrl()
         let remoteUserName = try person.getRemoteUserName()
         let newUserId = context.services.snowflakeService.generate()
-        
+
         let user = User(id: newUserId,
                         type: person.getUserType(),
                         url: url,
@@ -887,10 +880,10 @@ final class UsersService: UsersServiceType {
                         publishedAt: person.published?.fromISO8601String()
         )
         user.$movedTo.id = try await self.resolveMovedToUserId(from: person, on: context)
-        
+
         // Save user to database.
         try await user.save(on: context.db)
-        
+
         // Create flexi-fields (only include PropertyValue attachments).
         if let flexiFieldsDto = person.flexiFields()?.map({ FlexiFieldDto(key: $0.name, value: $0.value, baseAddress: "") }) {
             try await self.update(flexiFields: flexiFieldsDto, for: user, on: context)
@@ -898,22 +891,22 @@ final class UsersService: UsersServiceType {
 
         return user
     }
-    
-    func delete(user: User, force: Bool, on database: Database) async throws {        
+
+    func delete(user: User, force: Bool, on database: Database) async throws {
         try await user.delete(force: force, on: database)
     }
-    
+
     func delete(localUser: User, on context: QueueContext) async throws {
         // We are deleting all local user's references (user is marked as deleted).
         try await self.deleteUserData(for: localUser, forceDeleteUser: false, on: context.executionContext)
     }
-    
+
     func delete(remoteUser: User, on context: ExecutionContext) async throws {
         // We need to mark the deletion attempt.
         remoteUser.lastDeletionAttemptAt = Date.now
         remoteUser.deletionAttemptsCount = (remoteUser.deletionAttemptsCount ?? 0) + 1
         try await remoteUser.save(on: context.db)
-        
+
         // Try to delete from database.
         try await self.deleteUserData(for: remoteUser, forceDeleteUser: true, on: context)
     }
@@ -921,17 +914,17 @@ final class UsersService: UsersServiceType {
     private func deleteUserData(for user: User, forceDeleteUser: Bool, on context: ExecutionContext) async throws {
         // We have to try to delete all user's statuses from local database.
         try? await context.services.statusesService.delete(owner: user.requireID(), on: context)
-        
+
         // Mark remote user as deleted first (only when user doesn't have any statuses).
         // This protects us from partial cleanup failures leaving an active account in the database.
         let statusesCount = try await context.services.statusesService.count(for: user.requireID(), on: context.db)
         if statusesCount == 0 {
             try await self.delete(user: user, force: false, on: context.db)
         }
-        
+
         // Delete all user's references (and also remote user) from database.
         let userIdsToRecalculate = try await self.deleteUserReferences(for: user.requireID(), forceDeleteUser: forceDeleteUser, on: context.db)
-        
+
         // Recalculate user's follows count.
         try await userIdsToRecalculate.asyncForEach { sourceId in
             try await self.updateFollowCount(for: sourceId, on: context.db)
@@ -939,14 +932,14 @@ final class UsersService: UsersServiceType {
     }
 
     private func deleteUserReferences(for userId: Int64, forceDeleteUser: Bool, on database: Database) async throws -> Set<Int64> {
-        // We have to delete all user's follows.
-        let follows = try await Follow.query(on: database)
+        // Load follow edges first so related users can have their counters recalculated after cleanup.
+        let follows = (try? await Follow.query(on: database)
             .group(.or) { group in
                 group
                     .filter(\.$target.$id == userId)
                     .filter(\.$source.$id == userId)
             }
-            .all()
+            .all()) ?? []
 
         // Users connected with deleting account need to recalculate follow counters.
         var userIdsToRecalculate = Set<Int64>()
@@ -954,346 +947,322 @@ final class UsersService: UsersServiceType {
             userIdsToRecalculate.insert(follow.$source.id)
             userIdsToRecalculate.insert(follow.$target.id)
         }
-        userIdsToRecalculate.remove(userId)
 
-        // We have to delete all statuses featured by the user.
-        let featuredStatuses = try await FeaturedStatus.query(on: database)
-            .filter(\.$user.$id == userId)
-            .all()
+        // The deleted account will not be shown, so only surviving accounts need counter updates.
+        userIdsToRecalculate.remove(userId)
         
-        // We have to delete from featured users.
-        let featuredUsers = try await FeaturedUser.query(on: database)
+        // Remove follow edges where the deleted account is either follower or followed.
+        try? await follows.delete(on: database)
+
+        // Remove pins created by this user; the pinned statuses themselves are handled separately.
+        try? await FeaturedStatus.query(on: database)
+            .filter(\.$user.$id == userId)
+            .delete()
+
+        // Remove profile-feature relations where this user either created the feature or was featured.
+        try? await FeaturedUser.query(on: database)
             .group(.or) { group in
                 group
                     .filter(\.$user.$id == userId)
                     .filter(\.$featuredUser.$id == userId)
             }
-            .all()
-        
-        // We have to delete user's notification markers.
-        let notificationMarker = try await NotificationMarker.query(on: database)
-            .filter(\.$user.$id == userId)
-            .all()
-        
-        // We have to delete all user's notifications and notifications to other users.
-        let notifications = try await Notification.query(on: database)
+            .delete()
+
+        // Load notifications owned by the user or generated by the user so markers can be removed first.
+        let notifications = (try? await Notification.query(on: database)
             .group(.or) { group in
                 group
                     .filter(\.$user.$id == userId)
                     .filter(\.$byUser.$id == userId)
             }
-            .all()
+            .all()) ?? []
+
+        // Keep notification ids to clear marker rows before deleting notifications.
+        let notificationIds = notifications.compactMap { $0.id }
         
-        // We have to delete notification markers which points to notification to delete.
-        let notificationIds = try notifications.map { try $0.requireID() }
-        let notificationMarkersByNotification = try await NotificationMarker.query(on: database)
+        // Remove marker state owned by the deleted user.
+        try? await NotificationMarker.query(on: database)
+            .filter(\.$user.$id == userId)
+            .delete()
+        
+        // Remove marker state that points at notifications being deleted.
+        try? await NotificationMarker.query(on: database)
             .filter(\.$notification.$id ~~ notificationIds)
-            .all()
+            .delete()
         
-        // We have to delete all user's reports.
-        let reports = try await Report.query(on: database)
+        // Delete notifications after their marker rows are gone.
+        try? await notifications.delete(on: database)
+
+        // Remove reports filed by, filed against, or moderated by this user.
+        try? await Report.query(on: database)
             .group(.or) { group in
                 group
                     .filter(\.$user.$id == userId)
                     .filter(\.$reportedUser.$id == userId)
                     .filter(\.$considerationUser.$id == userId)
             }
-            .all()
-        
-        // We have to delete from trending users.
-        let trendingUsers = try await TrendingUser.query(on: database)
+            .delete()
+
+        // Remove this account from cached trending-user results.
+        try? await TrendingUser.query(on: database)
             .filter(\.$user.$id == userId)
-            .all()
-        
-        // We have to delete all user's mutes.
-        let userMutes = try await UserMute.query(on: database)
+            .delete()
+
+        // Remove mute relations where this user either muted someone or was muted.
+        try? await UserMute.query(on: database)
             .group(.or) { group in
                 group
                     .filter(\.$user.$id == userId)
                     .filter(\.$mutedUser.$id == userId)
             }
-            .all()
-        
-        // We have to delete from user's timelines.
-        let userStatuses = try await UserStatus.query(on: database)
+            .delete()
+
+        // Remove entries from this user's home timeline.
+        try? await UserStatus.query(on: database)
             .filter(\.$user.$id == userId)
-            .all()
-        
-        // We have to delete user's aliases.
-        let userAliases = try await UserAlias.query(on: database)
+            .delete()
+
+        // Remove ActivityPub aliases owned by this user.
+        try? await UserAlias.query(on: database)
             .filter(\.$user.$id == userId)
-            .all()
-        
-        // We have to delete user's bookmarks.
-        let statusBookmarks = try await StatusBookmark.query(on: database)
+            .delete()
+
+        // Remove bookmark interactions made by this user.
+        try? await StatusBookmark.query(on: database)
             .filter(\.$user.$id == userId)
-            .all()
-        
-        // We have to delete user's favourited statuses.
-        let statusFavourites = try await StatusFavourite.query(on: database)
+            .delete()
+
+        // Remove favourite interactions made by this user.
+        try? await StatusFavourite.query(on: database)
             .filter(\.$user.$id == userId)
-            .all()
-        
-        // We have to delete user's blocked domains.
-        let userBlockedDomains = try await UserBlockedDomain.query(on: database)
+            .delete()
+
+        // Remove domain blocks configured by this user.
+        try? await UserBlockedDomain.query(on: database)
             .filter(\.$user.$id == userId)
-            .all()
-        
-        // We have to delete all user's blocked users.
-        let userBlockedUsers = try await UserBlockedUser.query(on: database)
+            .delete()
+
+        // Remove block relations where this user either blocked someone or was blocked.
+        try? await UserBlockedUser.query(on: database)
             .group(.or) { group in
                 group
                     .filter(\.$user.$id == userId)
                     .filter(\.$blockedUser.$id == userId)
             }
-            .all()
-        
-        // Delete all status ActivityPub events connected with status.
-        let statusActivityPubEvents = try await StatusActivityPubEvent.query(on: database)
-            .filter(\.$user.$id == userId)
-            .all()
-        let statusActivityPubEventIds = try statusActivityPubEvents.map { try $0.requireID() }
+            .delete()
 
-        // We have to delete user's refresh tokens.
-        let refreshTokens = try await RefreshToken.query(on: database)
+        // Load ActivityPub delivery events owned by this user so event items can be deleted first.
+        let statusActivityPubEvents = (try? await StatusActivityPubEvent.query(on: database)
             .filter(\.$user.$id == userId)
-            .all()
-        
-        // We have to delete user's roles relations.
-        let userRoles = try await UserRole.query(on: database)
-            .filter(\.$user.$id == userId)
-            .all()
-        
-        // We have to delete user's external auth providers.
-        let externalUsers = try await ExternalUser.query(on: database)
-            .filter(\.$user.$id == userId)
-            .all()
-        
-        // We have to delete user's profile fields.
-        let flexiFields = try await FlexiField.query(on: database)
-            .filter(\.$user.$id == userId)
-            .all()
-        
-        // We have to delete user's hashtags from profile bio.
-        let userHashtags = try await UserHashtag.query(on: database)
-            .filter(\.$user.$id == userId)
-            .all()
-        
-        // We have to delete user's one time password tokens.
-        let twoFactorTokens = try await TwoFactorToken.query(on: database)
-            .filter(\.$user.$id == userId)
-            .all()
-        
-        // We have to delete user's push subscriptions.
-        let pushSubscriptions = try await PushSubscription.query(on: database)
-            .filter(\.$user.$id == userId)
-            .all()
-        
-        // We have to delete user's custom settings.
-        let userSettings = try await UserSetting.query(on: database)
-            .filter(\.$user.$id == userId)
-            .all()
-        
-        // We have to delete user's exports archives.
-        let archives = try await Archive.query(on: database)
-            .filter(\.$user.$id == userId)
-            .all()
+            .all()) ?? []
 
-        // We have to delete user's business cards.
-        let businessCards = try await BusinessCard.query(on: database)
+        let statusActivityPubEventIds = statusActivityPubEvents.compactMap { $0.id }
+
+        // Remove per-recipient delivery results before deleting their parent events.
+        try? await StatusActivityPubEventItem.query(on: database)
+            .filter(\.$statusActivityPubEvent.$id ~~ statusActivityPubEventIds)
+            .delete()
+
+        // Remove ActivityPub delivery event headers owned by the user.
+        try? await statusActivityPubEvents.delete(on: database)
+        
+        // Revoke refresh tokens that can authenticate as this user.
+        try? await RefreshToken.query(on: database)
             .filter(\.$user.$id == userId)
-            .all()
-        let businessCardIds = try businessCards.map { try $0.requireID() }
+            .delete()
+
+        // Remove role assignments for this user.
+        try? await UserRole.query(on: database)
+            .filter(\.$user.$id == userId)
+            .delete()
+
+        // Remove external login provider links for this user.
+        try? await ExternalUser.query(on: database)
+            .filter(\.$user.$id == userId)
+            .delete()
+
+        // Remove custom profile fields owned by this user.
+        try? await FlexiField.query(on: database)
+            .filter(\.$user.$id == userId)
+            .delete()
+
+        // Remove hashtags extracted from this user's profile bio.
+        try? await UserHashtag.query(on: database)
+            .filter(\.$user.$id == userId)
+            .delete()
+
+        // Remove hashtag follows created by this user.
+        try? await UserFollowedHashtag.query(on: database)
+            .filter(\.$user.$id == userId)
+            .delete()
+
+        // Remove two-factor authentication secret/token data for this user.
+        try? await TwoFactorToken.query(on: database)
+            .filter(\.$user.$id == userId)
+            .delete()
+
+        // Remove Web Push subscriptions registered by this user.
+        try? await PushSubscription.query(on: database)
+            .filter(\.$user.$id == userId)
+            .delete()
+
+        // Remove per-user settings rows.
+        try? await UserSetting.query(on: database)
+            .filter(\.$user.$id == userId)
+            .delete()
+
+        // Remove export archive metadata owned by this user.
+        try? await Archive.query(on: database)
+            .filter(\.$user.$id == userId)
+            .delete()
+
+        // Load business cards first because fields, shares, and messages depend on their ids.
+        let businessCards = (try? await BusinessCard.query(on: database)
+            .filter(\.$user.$id == userId)
+            .all()) ?? []
+
+        let businessCardIds = businessCards.compactMap { $0.id }
+
+        // Remove custom fields attached to this user's business cards.
+        try? await BusinessCardField.query(on: database)
+            .filter(\.$businessCard.$id ~~ businessCardIds)
+            .delete()
         
-        // We have to delete custom fields for user's business cards.
-        let businessCardFields: [BusinessCardField]
-        if businessCardIds.isEmpty {
-            businessCardFields = []
-        } else {
-            businessCardFields = try await BusinessCardField.query(on: database)
-                .filter(\.$businessCard.$id ~~ businessCardIds)
-                .all()
-        }
-        
-        // We have to delete shares generated for user's business cards.
+        // Load generated shares so messages connected to those shares can be removed first.
         let sharedBusinessCards: [SharedBusinessCard]
         if businessCardIds.isEmpty {
             sharedBusinessCards = []
         } else {
-            sharedBusinessCards = try await SharedBusinessCard.query(on: database)
+            sharedBusinessCards = (try? await SharedBusinessCard.query(on: database)
                 .filter(\.$businessCard.$id ~~ businessCardIds)
-                .all()
+                .all()) ?? []
         }
-        let sharedBusinessCardIds = try sharedBusinessCards.map { try $0.requireID() }
-        
-        // We have to delete messages linked with user and user's shared business cards.
-        let sharedBusinessCardMessages = try await SharedBusinessCardMessage.query(on: database)
+
+        let sharedBusinessCardIds = sharedBusinessCards.compactMap { $0.id }
+
+        // Remove messages authored by this user or attached to this user's shared business cards.
+        try? await SharedBusinessCardMessage.query(on: database)
             .group(.or) { group in
                 group.filter(\.$user.$id == userId)
-                
+
                 if sharedBusinessCardIds.isEmpty == false {
                     group.filter(\.$sharedBusinessCard.$id ~~ sharedBusinessCardIds)
                 }
             }
-            .all()
+            .delete()
+
+        // Delete shared business cards before deleting their parent business cards.
+        try? await sharedBusinessCards.delete(on: database)
+        try? await businessCards.delete(on: database)
         
-        // We have to delete invitations created by user and invitations where user was invited.
-        let invitations = try await Invitation.query(on: database)
+        // Remove invitations created by this user and invitations targeting this user.
+        try? await Invitation.query(on: database)
             .group(.or) { group in
                 group
                     .filter(\.$user.$id == userId)
                     .filter(\.$invited.$id == userId)
             }
-            .all()
+            .delete()
         
-        // We have to delete user's articles.
-        let articles = try await Article.query(on: database)
+        // Load articles first because reads, visibility rules, and file metadata depend on their ids.
+        let articles = (try? await Article.query(on: database)
             .filter(\.$user.$id == userId)
-            .all()
-        let articleIds = try articles.map { try $0.requireID() }
-        
-        // We have to delete visibility rules assigned to user's articles.
-        let articleVisibilities: [ArticleVisibility]
-        if articleIds.isEmpty {
-            articleVisibilities = []
-        } else {
-            articleVisibilities = try await ArticleVisibility.query(on: database)
-                .filter(\.$article.$id ~~ articleIds)
-                .all()
-        }
-        
-        // We have to delete files metadata assigned to user's articles.
-        let articleFileInfos: [ArticleFileInfo]
-        if articleIds.isEmpty {
-            articleFileInfos = []
-        } else {
-            articleFileInfos = try await ArticleFileInfo.query(on: database)
-                .filter(\.$article.$id ~~ articleIds)
-                .all()
-        }
-        
-        // We have to delete article reads linked with user and user's articles.
-        let articleReads = try await ArticleRead.query(on: database)
+            .all()) ?? []
+
+        let articleIds = articles.compactMap { $0.id }
+
+        // Remove article-read state created by this user or pointing at this user's articles.
+        try? await ArticleRead.query(on: database)
             .group(.or) { group in
                 group.filter(\.$user.$id == userId)
-                
+
                 if articleIds.isEmpty == false {
                     group.filter(\.$article.$id ~~ articleIds)
                 }
             }
-            .all()
+            .delete()
+        
+        // Clear the main-file self reference before deleting article file metadata.
+        for article in articles {
+            article.$mainArticleFileInfo.id = nil
+            try? await article.save(on: database)
+        }
+        
+        if articleIds.isEmpty == false {
+            // Remove visibility rules that belong to this user's articles.
+            try? await ArticleVisibility.query(on: database)
+                .filter(\.$article.$id ~~ articleIds)
+                .delete()
+        
+            // Remove file metadata after article rows no longer point at their main file.
+            try? await ArticleFileInfo.query(on: database)
+                .filter(\.$article.$id ~~ articleIds)
+                .delete()
+        }
+        
+        // Delete articles after their dependent rows have been removed.
+        try? await articles.delete(on: database)
 
-        // We have to delete user's following imports.
-        let followingImports = try await FollowingImport.query(on: database)
+        // Load following imports so imported account rows can be deleted first.
+        let followingImports = (try? await FollowingImport.query(on: database)
             .filter(\.$user.$id == userId)
-            .all()
-        
-        let followingImportIds = try followingImports.map { try $0.requireID() }
-        
-        // We have to delete items imported in user's following imports.
-        let followingImportItems = try await FollowingImportItem.query(on: database)
+            .all()) ?? []
+
+        let followingImportIds = followingImports.compactMap { $0.id }
+
+        // Remove imported account rows before deleting their import batch.
+        try? await FollowingImportItem.query(on: database)
             .filter(\.$followingImport.$id ~~ followingImportIds)
-            .all()
+            .delete()
 
-        // We have to delete user's dynamic oauth clients.
-        let authDynamicClients = try await AuthDynamicClient.query(on: database)
+        // Delete following-import batches owned by this user.
+        try? await followingImports.delete(on: database)
+        
+        // Load dynamic OAuth clients so authorization requests can be removed before client rows.
+        let authDynamicClients = (try? await AuthDynamicClient.query(on: database)
             .filter(\.$user.$id == userId)
-            .all()
-        
-        let authDynamicClientIds = try authDynamicClients.map { try $0.requireID() }
-        
-        // We have to delete oauth authorization requests linked with user and user's dynamic clients.
-        let oauthClientRequests = try await OAuthClientRequest.query(on: database)
+            .all()) ?? []
+
+        let authDynamicClientIds = authDynamicClients.compactMap { $0.id }
+
+        // Remove OAuth authorization requests created by this user or by this user's clients.
+        try? await OAuthClientRequest.query(on: database)
             .group(.or) { group in
                 group
                     .filter(\.$user.$id == userId)
                     .filter(\.$authDynamicClient.$id ~~ authDynamicClientIds)
             }
-            .all()
+            .delete()
         
-        // We have to delete user's audit events.
-        let events = try await Event.query(on: database)
+        // Delete dynamic OAuth client registrations owned by this user.
+        try? await authDynamicClients.delete(on: database)
+
+        // Remove audit/event log rows directly linked to this user.
+        try? await Event.query(on: database)
             .filter(\.$userId == userId)
-            .all()
-        
-        // We have to clear movedTo references pointing to user being deleted.
-        let usersWithMovedToReference = try await User.query(on: database)
+            .delete()
+
+        // Load account-migration references pointing to this user so they can be nulled before force delete.
+        let usersWithMovedToReference = (try? await User.query(on: database)
             .filter(\.$movedTo.$id == userId)
-            .all()
+            .all()) ?? []
         
-        try await database.transaction { transaction in
-            // Delete all status ActivityPub event items connected with event connected with status.
-            try await StatusActivityPubEventItem.query(on: transaction)
-                .filter(\.$statusActivityPubEvent.$id ~~ statusActivityPubEventIds)
-                .delete()
+        // Clear movedTo back references to avoid a self-referencing user foreign-key violation.
+        for user in usersWithMovedToReference {
+            user.$movedTo.id = nil
+            try? await user.save(on: database)
+        }
 
-            // Delete all status ActivityPub events connected with status.
-            try await statusActivityPubEvents.delete(on: transaction)
-            
-            // Cleanup records dependent on parent entities.
-            try await followingImportItems.delete(on: transaction)
-            try await oauthClientRequests.delete(on: transaction)
-            try await sharedBusinessCardMessages.delete(on: transaction)
-            try await businessCardFields.delete(on: transaction)
-            try await sharedBusinessCards.delete(on: transaction)
-            try await articleReads.delete(on: transaction)
-            try await articleVisibilities.delete(on: transaction)
-            try await userAliases.delete(on: transaction)
-            try await follows.delete(on: transaction)
-            try await notificationMarker.delete(on: transaction)
-            try await notificationMarkersByNotification.delete(on: transaction)
-            try await notifications.delete(on: transaction)
-            try await reports.delete(on: transaction)
-            try await trendingUsers.delete(on: transaction)
-            try await userMutes.delete(on: transaction)
-            try await userStatuses.delete(on: transaction)
-            try await featuredStatuses.delete(on: transaction)
-            try await featuredUsers.delete(on: transaction)
-            try await statusBookmarks.delete(on: transaction)
-            try await statusFavourites.delete(on: transaction)
-            try await userBlockedDomains.delete(on: transaction)
-            try await userBlockedUsers.delete(on: transaction)
-            try await refreshTokens.delete(on: transaction)
-            try await userRoles.delete(on: transaction)
-            try await externalUsers.delete(on: transaction)
-            try await flexiFields.delete(on: transaction)
-            try await userHashtags.delete(on: transaction)
-            try await twoFactorTokens.delete(on: transaction)
-            try await pushSubscriptions.delete(on: transaction)
-            try await userSettings.delete(on: transaction)
-            try await archives.delete(on: transaction)
-            try await invitations.delete(on: transaction)
-            
-            for article in articles {
-                article.$mainArticleFileInfo.id = nil
-                try await article.save(on: transaction)
-            }
-
-            try await articleFileInfos.delete(on: transaction)
-            try await articles.delete(on: transaction)
-            try await businessCards.delete(on: transaction)
-            
-            try await followingImports.delete(on: transaction)
-            try await authDynamicClients.delete(on: transaction)
-            try await events.delete(on: transaction)
-
-            // Remove movedTo references pointing to the user being deleted to avoid foreign key constraint violations.
-            for user in usersWithMovedToReference {
-                user.$movedTo.id = nil
-                try await user.save(on: transaction)
-            }
-            
-            // Remove remote users from database completely.
-            if forceDeleteUser {
-                if let userToDelete = try await User.query(on: transaction)
-                    .withDeleted()
-                    .filter(\.$id == userId)
-                    .first() {
-                    try await userToDelete.delete(force: true, on: transaction)
-                }
+        // For remote users, remove the user row entirely after best-effort dependency cleanup.
+        if forceDeleteUser {
+            if let userToDelete = try? await User.query(on: database)
+                .withDeleted()
+                .filter(\.$id == userId)
+                .first() {
+                try? await userToDelete.delete(force: true, on: database)
             }
         }
-        
+
         return userIdsToRecalculate
     }
 
@@ -1303,10 +1272,10 @@ final class UsersService: UsersServiceType {
         if let gravatarEmailData = gravatarEmail.data(using: .utf8) {
             return Insecure.MD5.hash(data: gravatarEmailData).hexEncodedString()
         }
-        
+
         return ""
     }
-    
+
     func ownStatuses(for userId: Int64, linkableParams: LinkableParams, onlyPinned: Bool, on context: ExecutionContext) async throws -> LinkableResult<Status> {
         var query = Status.query(on: context.db)
             .filter(\.$user.$id == userId)
@@ -1332,7 +1301,7 @@ final class UsersService: UsersServiceType {
             query = query
                 .filter(\.$pinnedAt != nil)
         }
-            
+
         if let minId = linkableParams.minId?.toId() {
             query = query
                 .filter(\.$id > minId)
@@ -1349,18 +1318,18 @@ final class UsersService: UsersServiceType {
             query = query
                 .sort(\.$createdAt, .descending)
         }
-        
+
         let statuses = try await query
             .limit(linkableParams.limit)
             .all()
-        
+
         return LinkableResult(
             maxId: statuses.last?.stringId(),
             minId: statuses.first?.stringId(),
             data: statuses
         )
     }
-    
+
     func publicStatuses(for userId: Int64, linkableParams: LinkableParams, onlyPinned: Bool, on context: ExecutionContext) async throws -> LinkableResult<Status> {
         var query = Status.query(on: context.db)
             .filter(\.$replyToStatus.$id == nil)
@@ -1390,7 +1359,7 @@ final class UsersService: UsersServiceType {
             query = query
                 .filter(\.$pinnedAt != nil)
         }
-            
+
         if let minId = linkableParams.minId?.toId() {
             query = query
                 .filter(\.$id > minId)
@@ -1411,17 +1380,17 @@ final class UsersService: UsersServiceType {
         let statuses = try await query
             .limit(linkableParams.limit)
             .all()
-        
+
         return LinkableResult(
             maxId: statuses.last?.stringId(),
             minId: statuses.first?.stringId(),
             data: statuses
         )
     }
-    
+
     private func update(flexiFields: [FlexiFieldDto], for user: User, on context: ExecutionContext) async throws {
         let flexiFieldsFromDb = try await user.$flexiFields.get(on: context.db)
-        
+
         var fieldsToDelete: [FlexiField] = []
         for flexiFieldFromDb in flexiFieldsFromDb {
             if let flexiFieldDto = flexiFields.first(where: { $0.id == flexiFieldFromDb.stringId() }) {
@@ -1433,7 +1402,7 @@ final class UsersService: UsersServiceType {
                     flexiFieldFromDb.key = flexiFieldDto.key
                     flexiFieldFromDb.value = flexiFieldDto.value
                     flexiFieldFromDb.isVerified = false
-                    
+
                     try await flexiFieldFromDb.update(on: context.db)
                 }
             } else {
@@ -1441,16 +1410,16 @@ final class UsersService: UsersServiceType {
                 fieldsToDelete.append(flexiFieldFromDb)
             }
         }
-        
+
         // Delete from database.
         try await fieldsToDelete.delete(on: context.db)
-        
+
         // Add new flexi fields.
         for flexiFieldDto in flexiFields {
             if (flexiFieldDto.key ?? "") == "" && (flexiFieldDto.value ?? "") == "" {
                 continue
             }
-            
+
             if flexiFieldsFromDb.contains(where: { $0.stringId() == flexiFieldDto.id }) == false {
                 let id = context.services.snowflakeService.generate()
                 let flexiField = try FlexiField(id: id,
@@ -1462,38 +1431,38 @@ final class UsersService: UsersServiceType {
             }
         }
     }
-    
+
     private func update(hashtags bio: String?, for user: User, on context: ExecutionContext) async throws {
         guard let bio else {
             try await user.$hashtags.get(on: context.db).delete(on: context.db)
             return
         }
-                
+
         let hashtagPattern = #/(?<tag>#+[a-zA-Z0-9(_)]{1,})/#
         let matches = bio.matches(of: hashtagPattern)
-        
+
         let tags = matches.map { match in
             String(match.tag.trimmingPrefix("#"))
         }
-        
+
         let tagsFromDatabase = try await user.$hashtags.get(on: context.db)
         var tagsToDelete: [UserHashtag] = []
-        
+
         for tagFromDatabase in tagsFromDatabase {
             if tags.first(where: { $0.uppercased() == tagFromDatabase.hashtagNormalized }) == nil {
                 tagsToDelete.append(tagFromDatabase)
             }
         }
-        
+
         // Delete from database.
         try await tagsToDelete.delete(on: context.db)
-        
+
         // Add new hashtags.
         for tag in tags {
             if tag.isEmpty {
                 continue
             }
-            
+
             if tagsFromDatabase.contains(where: { $0.hashtagNormalized == tag.uppercased() }) == false {
                 let userHashtagId = context.services.snowflakeService.generate()
                 let userHashtag = try UserHashtag(id: userHashtagId, userId: user.requireID(), hashtag: tag)
@@ -1501,7 +1470,7 @@ final class UsersService: UsersServiceType {
             }
         }
     }
-    
+
     func updateFollowCount(for userId: Int64, on database: Database) async throws {
         guard let sql = database as? SQLDatabase else {
             return
@@ -1514,72 +1483,25 @@ final class UsersService: UsersServiceType {
             WHERE \(ident: "id") = \(bind: userId)
         """).run()
     }
-    
-    func deleteFromRemote(userId: Int64, on context: QueueContext) async throws {
-        guard let userToDelete = try await User.query(on: context.application.db)
-            .withDeleted()
-            .filter(\.$id == userId)
-            .first() else {
-            context.logger.warning("User: '\(userId)' cannot exists in database.")
-            return
-        }
 
-        guard userToDelete.isLocal else {
-            context.logger.warning("User: '\(userId)' doesn't have to be deleted from remote server (it's remote user).")
-            return
-        }
-        
-        guard let privateKey = userToDelete.privateKey else {
-            context.logger.warning("User: '\(userId)' cannot be send to shared inbox (delete). Missing private key.")
-            return
-        }
-        
-        let users = try await User.query(on: context.application.db)
-            .filter(\.$isLocal == false)
-            .field(\.$sharedInbox)
-            .unique()
-            .all()
-        
-        let sharedInboxes = users.map({  $0.sharedInbox })
-        for (index, sharedInbox) in sharedInboxes.enumerated() {
-            guard let sharedInbox, let sharedInboxUrl = URL(string: sharedInbox) else {
-                context.logger.warning("User delete: '\(userToDelete.userName)' cannot be send to shared inbox url: '\(sharedInbox ?? "")'.")
-                continue
-            }
-
-            context.logger.info("[\(index + 1)/\(sharedInboxes.count)] Sending user delete: '\(userToDelete.userName)' to shared inbox: '\(sharedInboxUrl.absoluteString)'.")
-            let activityPubClient = ActivityPubClient(privatePemKey: privateKey, userAgent: Constants.userAgent, host: sharedInboxUrl.host)
-            
-            do {
-                try await activityPubClient.delete(actorId: userToDelete.activityPubProfile, on: sharedInboxUrl)
-            } catch {
-                if error is NetworkError || error.isConnectionError {
-                    context.logger.warning("Sending user delete to shared inbox error. Shared inbox url: \(sharedInboxUrl). Error: \(error).")
-                } else {
-                    await context.logger.store("Sending user delete to shared inbox error.", error, on: context.application)
-                }
-            }
-        }
-    }
-    
     func getDefaultSystemUser(on database: Database) async throws -> User? {
         guard let systemDefaultUserIdSetting = try await Setting.query(on: database)
             .filter(\.$key == SettingKey.systemDefaultUserId.rawValue)
             .first() else {
             return nil
         }
-        
+
         if systemDefaultUserIdSetting.value == "" {
             return nil
         }
-        
+
         guard let systemUserId = systemDefaultUserIdSetting.value.toId() else {
             return nil
         }
-        
+
         return try await User.query(on: database).filter(\.$id == systemUserId).first()
     }
-    
+
     private func getUserProfile(user: User,
                                 flexiFields: [FlexiField]?,
                                 roles: [Role]?,
@@ -1589,7 +1511,7 @@ final class UsersService: UsersServiceType {
         let baseImagesPath = context.services.storageService.getBaseImagesPath(on: context)
         let baseAddress = context.settings.cached?.baseAddress ?? ""
         let movedToUserDto = await self.getMovedToUserDto(for: user, on: context)
-        
+
         let userDto = UserDto(from: user,
                               flexiFields: flexiFields,
                               roles: roles,
@@ -1613,42 +1535,42 @@ final class UsersService: UsersServiceType {
 
         return userDto
     }
-    
+
     private func resolveMovedToUserId(from person: PersonDto, on context: ExecutionContext) async throws -> Int64? {
         guard let movedTo = person.movedTo, movedTo.isEmpty == false else {
             return nil
         }
-        
+
         guard person.id.compare(movedTo, options: .caseInsensitive) != .orderedSame else {
             return nil
         }
-        
+
         if let movedToUser = try await self.get(activityPubProfile: movedTo, on: context.db) {
             return movedToUser.id
         }
-        
-        if let downloadedMovedToUser = try await context.services.searchService
-            .downloadRemoteUser(activityPubProfile: movedTo, on: context) {
+
+        let activityPubDownloadUserService = context.services.activityPubDownloadUserService
+        if let downloadedMovedToUser = try await activityPubDownloadUserService.downloadIfNeeded(activityPubProfile: movedTo, on: context) {
             return downloadedMovedToUser.id
         }
-        
+
         return nil
     }
-    
+
     private func getMovedToUserDto(for user: User, on context: ExecutionContext) async -> UserDto? {
         guard user.$movedTo.id != nil else {
             return nil
         }
-        
+
         guard let movedToUser = try? await user.$movedTo.get(on: context.db) else {
             return nil
         }
-        
+
         let baseImagesPath = context.services.storageService.getBaseImagesPath(on: context)
         let baseAddress = context.settings.cached?.baseAddress ?? ""
         let movedToFlexiFields = try? await movedToUser.$flexiFields.get(on: context.db)
         let movedToRoles = try? await movedToUser.$roles.get(on: context.db)
-        
+
         return UserDto(from: movedToUser,
                        flexiFields: movedToFlexiFields,
                        roles: movedToRoles,
@@ -1656,34 +1578,34 @@ final class UsersService: UsersServiceType {
                        baseImagesPath: baseImagesPath,
                        baseAddress: baseAddress)
     }
-    
+
     private func userIsFeatured(userId: Int64, on context: ExecutionContext) async throws -> Bool {
         let amount = try await FeaturedUser.query(on: context.db)
             .filter(\.$featuredUser.$id == userId)
             .count()
-        
+
         return amount > 0
     }
-    
+
     private func usersAreFeatured(userIds: [Int64], on context: ExecutionContext) async throws -> [Int64] {
         guard let authorizationPayloadId = context.userId else {
             return []
         }
-        
+
         let featuredUsers = try await FeaturedUser.query(on: context.db)
             .filter(\.$user.$id == authorizationPayloadId)
             .filter(\.$featuredUser.$id ~~ userIds)
             .field(\.$featuredUser.$id)
             .all()
-        
+
         return featuredUsers.map({ $0.$featuredUser.id })
     }
-    
+
     private func getPersonImage(for fileName: String?, on context: ExecutionContext) -> PersonImageDto? {
         guard let fileName else {
             return nil
         }
-        
+
         let baseImagesPath = context.application.services.storageService.getBaseImagesPath(on: context)
         return PersonImageDto(mediaType: "image/jpeg",
                               url: "\(baseImagesPath)/\(fileName)")
