@@ -6,6 +6,7 @@
 
 import Vapor
 import Fluent
+import SQLKit
 
 extension Application.Services {
     struct LocalizablesServiceKey: StorageKey {
@@ -54,10 +55,10 @@ final class LocalizablesService: LocalizablesServiceType {
     }
     
     func get(code: String, locale: String, variables: [String:String]?, on database: Database) async throws -> String {
-        let localizable = try await Localizable.query(on: database).group(.and) { localeGroup in
-            localeGroup.filter(\.$code == code)
-            localeGroup.filter(\.$locale == locale)
-        }.first()
+        var localizable = try await self.findLocalizable(code: code, locale: locale, on: database)
+        if localizable == nil {
+            localizable = try await self.findLocalizable(code: code, locale: "en_US", on: database)
+        }
         
         guard let localizable else {
             return code
@@ -73,5 +74,12 @@ final class LocalizablesService: LocalizablesServiceType {
         }
         
         return localizabedString
+    }
+
+    private func findLocalizable(code: String, locale: String, on database: Database) async throws -> Localizable? {
+        try await Localizable.query(on: database).group(.and) { localeGroup in
+            localeGroup.filter(\.$code == code)
+            localeGroup.filter(.sql(embed: "lower(\(ident: "locale")) = lower(\(bind: locale))"))
+        }.first()
     }
 }
