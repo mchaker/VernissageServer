@@ -36,6 +36,28 @@ struct LocalizablesServiceTests {
         // Arrange.
         #expect(localizedEmailSubject == "Vernissage - Archive is ready", "Localized string should be downloaded.")
     }
+
+    @Test
+    func `LocalizedStringShouldBeDownloadedFromDatabaseIgnoringLocaleCase.`() async throws {
+        // Act.
+        let localizedEmailSubject = try await application.services.localizablesService.get(code: "email.archiveReady.subject",
+                                                                                           locale: "pl_pl",
+                                                                                           on: application.db)
+
+        // Arrange.
+        #expect(localizedEmailSubject == "Vernissage - Archiwum gotowe", "Localized string should be downloaded ignoring locale case.")
+    }
+
+    @Test
+    func `LocalizedStringShouldFallbackToDefaultLocale.`() async throws {
+        // Act.
+        let localizedEmailSubject = try await application.services.localizablesService.get(code: "email.archiveReady.subject",
+                                                                                           locale: "de_DE",
+                                                                                           on: application.db)
+
+        // Arrange.
+        #expect(localizedEmailSubject == "Vernissage - Archive is ready", "Localized string should fallback to default locale.")
+    }
     
     @Test
     func `LocalizedStringWithParametersShouldBeDownloadedFromDatabase.`() async throws {
