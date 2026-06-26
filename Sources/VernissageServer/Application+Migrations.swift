@@ -209,5 +209,6 @@ extension Application {
         self.migrations.add(User.AddFeaturedField())
         self.migrations.add(Status.CreateActivityPubUrlIndex())
         self.migrations.add(User.CreateMovedToUserIdIndex())
+        self.migrations.add(Article.AddLanguage())
     }
 }
