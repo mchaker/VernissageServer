@@ -210,5 +210,7 @@ extension Application {
         self.migrations.add(Status.CreateActivityPubUrlIndex())
         self.migrations.add(User.CreateMovedToUserIdIndex())
         self.migrations.add(Article.AddLanguage())
+        self.migrations.add(Attachment.ChangeDescriptionLength())
+        self.migrations.add(AttachmentHistory.ChangeDescriptionLength())
     }
 }
