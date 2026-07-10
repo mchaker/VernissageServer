@@ -15,56 +15,56 @@ struct ActivityPubUserInboxJob: AsyncJob {
 
     func dequeue(_ context: QueueContext, _ payload: ActivityPubRequestDto) async throws {
         context.logger.info("ActivityPubUserInboxJob dequeued job. Activity (type: '\(payload.activity.type)', path: '\(payload.httpPath.path())', id: '\(payload.activity.id)').")
-        
-        let activityPubService = context.application.services.activityPubService
+
+        let activityPubIncomingService = context.application.services.activityPubIncomingService
         let activityPubSignatureService = context.application.services.activityPubSignatureService
         let executionContext = context.executionContext
-        
+
         // Validate supported algorithm.
         try activityPubSignatureService.validateAlgorithm(activityPubRequest: payload)
-                
+
         switch payload.activity.type {
         case .delete:
-            try await activityPubService.delete(activityPubRequest: payload, on: executionContext)
+            try await activityPubIncomingService.delete(activityPubRequest: payload, on: executionContext)
         case .create:
             try await activityPubSignatureService.validateSignature(activityPubRequest: payload, on: executionContext)
-            try await activityPubService.create(activityPubRequest: payload, on: executionContext)
+            try await activityPubIncomingService.create(activityPubRequest: payload, on: executionContext)
         case .update:
             try await activityPubSignatureService.validateSignature(activityPubRequest: payload, on: executionContext)
-            try await activityPubService.update(activityPubRequest: payload, on: executionContext)
+            try await activityPubIncomingService.update(activityPubRequest: payload, on: executionContext)
         case .follow:
             try await activityPubSignatureService.validateSignature(activityPubRequest: payload, on: executionContext)
-            try await activityPubService.follow(activityPubRequest: payload, on: executionContext)
+            try await activityPubIncomingService.follow(activityPubRequest: payload, on: executionContext)
         case .accept:
             try await activityPubSignatureService.validateSignature(activityPubRequest: payload, on: executionContext)
-            try await activityPubService.accept(activityPubRequest: payload, on: executionContext)
+            try await activityPubIncomingService.accept(activityPubRequest: payload, on: executionContext)
         case .reject:
             try await activityPubSignatureService.validateSignature(activityPubRequest: payload, on: executionContext)
-            try await activityPubService.reject(activityPubRequest: payload, on: executionContext)
+            try await activityPubIncomingService.reject(activityPubRequest: payload, on: executionContext)
         case .move:
             try await activityPubSignatureService.validateSignature(activityPubRequest: payload, on: executionContext)
-            try await activityPubService.move(activityPubRequest: payload, on: executionContext)
+            try await activityPubIncomingService.move(activityPubRequest: payload, on: executionContext)
         case .undo:
-            let should​Process​Undo = try await activityPubService.should​Process​Undo(activityPubRequest: payload, on: executionContext)
-            if should​Process​Undo {
+            let shouldProcessUndo = try await activityPubIncomingService.shouldProcessUndo(activityPubRequest: payload, on: executionContext)
+            if shouldProcessUndo {
                 try await activityPubSignatureService.validateSignature(activityPubRequest: payload, on: executionContext)
-                try await activityPubService.undo(activityPubRequest: payload, on: executionContext)
+                try await activityPubIncomingService.undo(activityPubRequest: payload, on: executionContext)
             }
         case .announce:
             try await activityPubSignatureService.validateSignature(activityPubRequest: payload, on: executionContext)
-            try await activityPubService.announce(activityPubRequest: payload, on: executionContext)
+            try await activityPubIncomingService.announce(activityPubRequest: payload, on: executionContext)
         case .like:
             try await activityPubSignatureService.validateSignature(activityPubRequest: payload, on: executionContext)
-            try await activityPubService.like(activityPubRequest: payload, on: executionContext)
+            try await activityPubIncomingService.like(activityPubRequest: payload, on: executionContext)
         case .flag:
             try await activityPubSignatureService.validateSignature(activityPubRequest: payload, on: executionContext)
-            try await activityPubService.flag(activityPubRequest: payload, on: executionContext)
+            try await activityPubIncomingService.flag(activityPubRequest: payload, on: executionContext)
         case .add:
             try await activityPubSignatureService.validateSignature(activityPubRequest: payload, on: executionContext)
-            try await activityPubService.add(activityPubRequest: payload, on: executionContext)
+            try await activityPubIncomingService.add(activityPubRequest: payload, on: executionContext)
         case .remove:
             try await activityPubSignatureService.validateSignature(activityPubRequest: payload, on: executionContext)
-            try await activityPubService.remove(activityPubRequest: payload, on: executionContext)
+            try await activityPubIncomingService.remove(activityPubRequest: payload, on: executionContext)
         default:
             context.logger.info("Unhandled action type: '\(payload.activity.type)'.")
         }

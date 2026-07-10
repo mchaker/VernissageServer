@@ -17,11 +17,11 @@ struct StatusDeleterJob: AsyncJob {
         context.logger.info("StatusDeleterJob dequeued job. Status (id: '\(payload.activityPubStatusId)').")
         
         context.logger.info("StatusDeleterJob deleting status from remote server. Status (id: '\(payload.activityPubStatusId)').")
-        let statusesService = context.application.services.statusesService
-        try await statusesService.deleteFromRemote(statusActivityPubId: payload.activityPubStatusId,
-                                                   userId: payload.userId,
-                                                   statusId: payload.statusId,
-                                                   on: context.executionContext)
+        let activityPubOutgoingStatusService = context.application.services.activityPubOutgoingStatusService
+        try await activityPubOutgoingStatusService.delete(statusActivityPubId: payload.activityPubStatusId,
+                                                          userId: payload.userId,
+                                                          statusId: payload.statusId,
+                                                          on: context.executionContext)
     }
 
     func error(_ context: QueueContext, _ error: Error, _ payload: StatusDeleteJobDto) async throws {

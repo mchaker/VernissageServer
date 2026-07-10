@@ -81,7 +81,7 @@ protocol StatusesServiceType: Sendable {
     /// - Returns: The count of statuses or comments.
     /// - Throws: An error if the database query fails.
     func count(onlyComments: Bool, on database: Database) async throws -> Int
-    
+
     /// Returns number of seconds user has to wait before creating a new status according to anti-flood limits.
     ///
     /// - Parameters:
@@ -93,17 +93,6 @@ protocol StatusesServiceType: Sendable {
     /// - Throws: An error if the database query fails.
     func antiFloodSecondsToWait(userId: Int64, isSilent: Bool, isComment: Bool, on context: ExecutionContext) async throws -> Double
 
-    /// Checks whether user is allowed to add a new status based on anti-flood limits.
-    ///
-    /// - Parameters:
-    ///   - userId: The user identifier.
-    ///   - isSilent: `true` for silent status creation mode, `false` for regular mode.
-    ///   - isComment: `true` when new status is a comment (has `replyToStatusId`), `false` otherwise.
-    ///   - context: The execution context for database and services.
-    /// - Returns: `true` when creating a new status is allowed, otherwise `false`.
-    /// - Throws: An error if the database query fails.
-    func isAntiFloodLimitSatisfied(userId: Int64, isSilent: Bool, isComment: Bool, on context: ExecutionContext) async throws -> Bool
-
     /// Counts statuses pinned by the given user and eligible for ActivityPub `featured` collection.
     ///
     /// Eligible statuses are public, not replies, not reblogs, and with `pinnedAt` set.
@@ -114,7 +103,7 @@ protocol StatusesServiceType: Sendable {
     /// - Returns: The count of pinned statuses visible in ActivityPub `featured`.
     /// - Throws: An error if the database query fails.
     func countFeatured(userId: Int64, on database: Database) async throws -> Int
-    
+
     /// Retrieves the history of a status by its Id.
     ///
     /// - Parameters:
@@ -189,7 +178,7 @@ protocol StatusesServiceType: Sendable {
     ///   - context: The execution context for database and services.
     /// - Throws: An error if sending fails.
     func send(unpin statusId: Int64, on context: ExecutionContext) async throws
-    
+
     /// Sends a favourite action for a status favourite ID.
     ///
     /// - Parameters:
@@ -216,7 +205,7 @@ protocol StatusesServiceType: Sendable {
     /// - Returns: The created Status.
     /// - Throws: An error if creation fails.
     func create(basedOn noteDto: NoteDto, userId: Int64, visibility: StatusVisibility, on context: ExecutionContext) async throws -> Status
-    
+
     /// Creates a new status based on a StatusRequestDto.
     ///
     /// - Parameters:
@@ -263,7 +252,7 @@ protocol StatusesServiceType: Sendable {
     ///   - context: The execution context for database and services.
     /// - Throws: An error if the operation fails.
     func createOnLocalTimelineForHashtagsFollowers(status: Status, on context: ExecutionContext) async throws
-    
+
     /// Creates status entries on the local timeline for explicitly mentioned local users.
     ///
     /// - Parameters:
@@ -272,7 +261,7 @@ protocol StatusesServiceType: Sendable {
     ///   - context: The execution context for database and services.
     /// - Throws: An error if the operation fails.
     func createOnLocalTimeline(mentionedUsers userIds: [Int64], status: Status, on context: ExecutionContext) async throws
-    
+
     /// Converts a status to a Data Transfer Object (DTO).
     ///
     /// - Parameters:
@@ -369,16 +358,6 @@ protocol StatusesServiceType: Sendable {
     /// - Throws: An error if deletion fails.
     func delete(id statusId: Int64, on database: Database) async throws
 
-    /// Deletes a remote status given its ActivityPub Id and related identifiers.
-    ///
-    /// - Parameters:
-    ///   - statusActivityPubId: The ActivityPub ID of the status.
-    ///   - userId: The user identifier requesting deletion.
-    ///   - statusId: The internal status identifier.
-    ///   - context: The execution context for database and services.
-    /// - Throws: An error if deletion fails.
-    func deleteFromRemote(statusActivityPubId: String, userId: Int64, statusId: Int64, on context: ExecutionContext) async throws
-
     /// Updates the reblogs count for the given status.
     ///
     /// - Parameters:
@@ -438,7 +417,7 @@ protocol StatusesServiceType: Sendable {
     /// - Returns: A list of featured statuses.
     /// - Throws: An error if the query fails.
     func featured(userId: Int64, on database: Database) async throws -> [Status]
-    
+
     /// Retrieves public statuses with pagination and filtering.
     ///
     /// - Parameters:
@@ -511,19 +490,31 @@ protocol StatusesServiceType: Sendable {
     ///   - context: The execution context for database and services.
     /// - Returns: An array of StatusHashtag objects.
     func getStatusHashtags(statusId: Int64, note: String?, on context: ExecutionContext) async -> [StatusHashtag]
+    
+    func getCommentatorsSharedInboxes(statusId: Int64?, on context: ExecutionContext) async throws -> [String]
 }
 
 /// A service for managing statuses in the system.
 final class StatusesService: StatusesServiceType {
 
     func get(activityPubId: String, on database: Database) async throws -> Status? {
+        // Keep the activityPubId/activityPubUrl lookup split into two simple queries.
+        // A single OR predicate made PostgreSQL scan many cached Statuses rows instead
+        // of reliably using the separate indexes on activityPubId and activityPubUrl.
+        let status = try await Status.query(on: database)
+            .with(\.$user)
+            .filter(\.$activityPubId == activityPubId)
+            .first()
+        
+        if status != nil {
+            return status
+        }
+        
+        // Fall back to activityPubUrl because some remote servers expose different
+        // values for a note's ActivityPub id and public URL.
         return try await Status.query(on: database)
             .with(\.$user)
-            .group(.or) { group in
-                group
-                    .filter(\.$activityPubId == activityPubId)
-                    .filter(\.$activityPubUrl == activityPubId)
-            }
+            .filter(\.$activityPubUrl == activityPubId)
             .first()
     }
 
@@ -607,7 +598,7 @@ final class StatusesService: StatusesServiceType {
 
         return try await query.count()
     }
-    
+
     func antiFloodSecondsToWait(userId: Int64, isSilent: Bool, isComment: Bool, on context: ExecutionContext) async throws -> Double {
         if isComment {
             return 0
@@ -642,14 +633,6 @@ final class StatusesService: StatusesServiceType {
         return 0
     }
 
-    func isAntiFloodLimitSatisfied(userId: Int64, isSilent: Bool, isComment: Bool, on context: ExecutionContext) async throws -> Bool {
-        let antiFloodSecondsToWait = try await self.antiFloodSecondsToWait(userId: userId,
-                                                                           isSilent: isSilent,
-                                                                           isComment: isComment,
-                                                                           on: context)
-        return antiFloodSecondsToWait <= 0
-    }
-
     func countFeatured(userId: Int64, on database: Database) async throws -> Int {
         return try await self.featuredBaseQuery(userId: userId, on: database).count()
     }
@@ -662,7 +645,7 @@ final class StatusesService: StatusesServiceType {
     func featured(userId: Int64, on database: Database) async throws -> [Status] {
         return try await self.featuredQuery(userId: userId, on: database).all()
     }
-    
+
     func get(history id: Int64, on database: Database) async throws -> [StatusHistory] {
         return try await StatusHistory.query(on: database)
             .filter(\.$orginalStatus.$id == id)
@@ -712,7 +695,7 @@ final class StatusesService: StatusesServiceType {
             .with(\.$user)
             .with(\.$category)
     }
-    
+
     func note(basedOn status: Status, replyToStatus: Status?, on context: ExecutionContext) async throws -> NoteDto {
         let baseImagesPath = context.services.storageService.getBaseImagesPath(on: context)
 
@@ -832,7 +815,7 @@ final class StatusesService: StatusesServiceType {
                 // Create statuses on local followers timeline.
                 try await self.createOnLocalTimeline(followersOf: status.user.requireID(), status: status, on: context)
                 try await self.createOnLocalTimelineForHashtagsFollowers(status: status, on: context)
-                
+
                 // Create mention notifications.
                 try await self.createMentionNotifications(status: status, on: context)
 
@@ -939,7 +922,7 @@ final class StatusesService: StatusesServiceType {
             break
         }
     }
-    
+
     func send(favourite statusFavouriteId: Int64, on context: ExecutionContext) async throws {
         let statusFavourite = try await StatusFavourite.query(on: context.db)
             .filter(\.$id == statusFavouriteId)
@@ -990,7 +973,7 @@ final class StatusesService: StatusesServiceType {
     }
 
     func create(basedOn noteDto: NoteDto, userId: Int64, visibility: StatusVisibility, on context: ExecutionContext) async throws -> Status {
-        
+
         // First we need to check if status with same activityPubId already exists in the database.
         let statusFromDatabase = try await self.get(activityPubId: noteDto.id, on: context.db)
         if let statusFromDatabase {
@@ -1059,29 +1042,29 @@ final class StatusesService: StatusesServiceType {
             context.logger.info("Status '\(noteDto.id)' already exists in the database (found before transaction).")
             return existingStatus
         }
-        
+
         context.logger.info("Saving status '\(noteDto.id)' in the database.")
         do {
             try await context.application.db.transaction { database in
                 // Save status in database.
                 try await status.save(on: database)
-                
+
                 // Connect attachments with new status.
                 for attachment in attachmentsFromDatabase {
                     attachment.$status.id = status.id
                     try await attachment.save(on: database)
                 }
-                
+
                 // Create hashtags based on note.
                 for statusHashtag in statusHashtags {
                     try await statusHashtag.save(on: database)
                 }
-                
+
                 // Create mentions based on note.
                 for statusMention in statusMentions {
                     try await statusMention.save(on: database)
                 }
-                
+
                 // Create emojis based on note.
                 for emoji in emojis {
                     if let emojiId = emoji.id, let fileName = downloadedEmojis[emojiId] {
@@ -1097,12 +1080,12 @@ final class StatusesService: StatusesServiceType {
                         try await statusEmoji.save(on: database)
                     }
                 }
-                
+
                 // We have to update number of statuses replies.
                 if let replyToStatusId = replyToStatusFromDatabase?.id {
                     try await self.updateRepliesCount(for: replyToStatusId, on: database)
                 }
-                
+
                 context.logger.info("Status '\(noteDto.id)' saved in the database.")
             }
         } catch {
@@ -1116,7 +1099,7 @@ final class StatusesService: StatusesServiceType {
 
             throw error
         }
-        
+
         // We can add notification to status owner about new comment.
         if let replyToStatus, let statusFromDatabase = try await self.get(id: newStatusId, on: context.application.db) {
             try await self.notifyOwnerAboutComment(toStatusId: replyToStatus.requireID(), by: statusFromDatabase.user.requireID(), on: context)
@@ -1726,7 +1709,7 @@ final class StatusesService: StatusesServiceType {
             page += 1
         }
     }
-    
+
     func createOnLocalTimeline(mentionedUsers userIds: [Int64], status: Status, on context: ExecutionContext) async throws {
         let statusId = try status.requireID()
         let uniqueUserIds = Set(userIds)
@@ -1750,7 +1733,7 @@ final class StatusesService: StatusesServiceType {
             try await userStatus.create(on: context.db)
         }
     }
-    
+
     public func reblogged(statusId: Int64, linkableParams: LinkableParams, on context: ExecutionContext) async throws -> LinkableResult<User> {
         var queryBuilder = Status.query(on: context.db)
             .with(\.$user) { user in
@@ -2005,7 +1988,7 @@ final class StatusesService: StatusesServiceType {
 
         // Calculate followers shared inboxes.
         let followersSharedInboxes = try await followsService.getFollowersOfSharedInboxes(followersOf: userId, on: context)
-        
+
         // Calculate commentators shared inboxes.
         let commentatorsSharedInboxes = try await self.getCommentatorsSharedInboxes(statusId: mainStatus?.requireID(), on: context)
 
@@ -2047,7 +2030,7 @@ final class StatusesService: StatusesServiceType {
             .dispatch(ActivityPubStatusJob.self, eventContext)
     }
 
-    private func getCommentatorsSharedInboxes(statusId: Int64?, on context: ExecutionContext) async throws -> [String] {
+    public func getCommentatorsSharedInboxes(statusId: Int64?, on context: ExecutionContext) async throws -> [String] {
         guard let statusId else {
             return []
         }
@@ -2076,7 +2059,7 @@ final class StatusesService: StatusesServiceType {
 
         return (sharedInboxes + userInboxes).compactMap { $0 }
     }
-    
+
     private func scheduleAnnounceSend(status: Status, followersOf userId: Int64, on context: ExecutionContext) async throws {
         let followsService = context.services.followsService
 
@@ -2095,7 +2078,7 @@ final class StatusesService: StatusesServiceType {
 
         // Calculate followers shared inboxes.
         let followersSharedInboxes = try await followsService.getFollowersOfSharedInboxes(followersOf: userId, on: context)
-        
+
         // Removed blocked instances from shared inboxes where announce of status should be sent.
         let filteredSharedInboxes = await self.removeBlockedDomains(from: Array(followersSharedInboxes), userId: userId, on: context)
 
@@ -2125,45 +2108,45 @@ final class StatusesService: StatusesServiceType {
             let newStatusActivityPubEventItemId = snowflakeService.generate()
             return StatusActivityPubEventItem(id: newStatusActivityPubEventItemId, statusActivityPubEventId: newStatusActivityPubEventId, url: $0)
         }
-        
+
         // Save integration information into database.
         try await context.db.transaction { database in
             try await statusActivityPubEvent.create(on: database)
             try await statusActivityPubEventItems.create(on: database)
         }
-        
+
         // Dispatch new queue which will send real network requests to calculated inboxes.
         try await context
             .queues(.apStatus)
             .dispatch(ActivityPubStatusJob.self, eventContext)
     }
-    
+
     private func scheduleUnannounceSend(activityPubUnreblog: ActivityPubUnreblogDto, on context: ExecutionContext) async throws {
         let followsService = context.services.followsService
 
         // Calculate followers shared inboxes.
         let followersSharedInboxes = try await followsService.getFollowersOfSharedInboxes(followersOf: activityPubUnreblog.userId, on: context)
-        
+
         // Create array with integration information.
         let snowflakeService = context.services.snowflakeService
         let statusId = activityPubUnreblog.orginalStatusId
         let userId = activityPubUnreblog.userId
-        
+
         let newStatusActivityPubEventId = snowflakeService.generate()
         let eventContext = ActivityPubStatusJobDataDto(statusActivityPubEventId: newStatusActivityPubEventId, activityPubUnreblog: activityPubUnreblog)
         let eventContextString = try eventContext.encode()
-        
+
         let statusActivityPubEvent = StatusActivityPubEvent(id: newStatusActivityPubEventId,
                                                             statusId: statusId,
                                                             userId: userId,
                                                             type: .unannounce,
                                                             eventContext: eventContextString)
-        
+
         let statusActivityPubEventItems = followersSharedInboxes.map {
             let newStatusActivityPubEventItemId = snowflakeService.generate()
             return StatusActivityPubEventItem(id: newStatusActivityPubEventItemId, statusActivityPubEventId: newStatusActivityPubEventId, url: $0)
         }
-        
+
         // Save integration information into database.
         try await context.db.transaction { database in
             try await statusActivityPubEvent.create(on: database)
@@ -2216,7 +2199,7 @@ final class StatusesService: StatusesServiceType {
             .queues(.apStatus)
             .dispatch(ActivityPubStatusJob.self, eventContext)
     }
-    
+
     func convertToDtos(statuses: [Status], on context: ExecutionContext) async -> [StatusDto] {
         let baseImagesPath = context.services.storageService.getBaseImagesPath(on: context)
         let baseAddress = context.settings.cached?.baseAddress ?? ""
@@ -2532,7 +2515,7 @@ final class StatusesService: StatusesServiceType {
         let statusFeatured = try await FeaturedStatus.query(on: database)
             .filter(\.$status.$id == statusId)
             .all()
-        
+
         // We have to delete all status reports (direct and thread-main references).
         let statusReports = try await Report.query(on: database)
             .group(.or) { group in
@@ -2556,7 +2539,7 @@ final class StatusesService: StatusesServiceType {
         let statusTrending = try await TrendingStatus.query(on: database)
             .filter(\.$status.$id == statusId)
             .all()
-        
+
         // We have to delete all notifications which mention that status (direct and thread-main references).
         let notifications = try await Notification.query(on: database)
             .group(.or) { group in
@@ -2660,57 +2643,6 @@ final class StatusesService: StatusesServiceType {
         // We have to update number of statuses replies.
         if let replyToStatusId = status.$replyToStatus.id {
             try await self.updateRepliesCount(for: replyToStatusId, on: database)
-        }
-    }
-
-    func deleteFromRemote(statusActivityPubId: String, userId: Int64, statusId: Int64, on context: ExecutionContext) async throws {
-        let followsService = context.services.followsService
-
-        guard let user = try await User.query(on: context.db)
-            .filter(\.$id == userId)
-            .withDeleted()
-            .first() else {
-            context.logger.warning("User: '\(userId)' cannot exists in database.")
-            return
-        }
-
-        guard let privateKey = user.privateKey else {
-            context.logger.warning("Status: '\(statusActivityPubId)' cannot be send to shared inbox (delete). Missing private key.")
-            return
-        }
-
-        let users = try await User.query(on: context.db)
-            .filter(\.$isLocal == false)
-            .field(\.$sharedInbox)
-            .unique()
-            .all()
-
-        // All shared inboxes.
-        let allSharedInboxes = users.map({  $0.sharedInbox })
-
-        // Calculate followers shared inboxes.
-        let followersSharedInboxes = try await followsService.getFollowersOfSharedInboxes(followersOf: userId, on: context)
-        
-        // Calculate commentators shared inboxes.
-        let commentatorsSharedInboxes = try await self.getCommentatorsSharedInboxes(statusId: statusId, on: context)
-
-        // All combined shared inboxes.
-        let sharedInboxesSet = Array(followersSharedInboxes + commentatorsSharedInboxes + allSharedInboxes).unique()
-
-        for (index, sharedInbox) in sharedInboxesSet.enumerated() {
-            guard let sharedInbox, let sharedInboxUrl = URL(string: sharedInbox) else {
-                context.logger.warning("Status delete: '\(statusActivityPubId)' cannot be send to shared inbox url: '\(sharedInbox ?? "")'.")
-                continue
-            }
-
-            context.logger.info("[\(index + 1)/\(sharedInboxesSet.count)] Sending status delete: '\(statusActivityPubId)' to shared inbox: '\(sharedInboxUrl.absoluteString)'.")
-            let activityPubClient = ActivityPubClient(privatePemKey: privateKey, userAgent: Constants.userAgent, host: sharedInboxUrl.host)
-
-            do {
-                try await activityPubClient.delete(actorId: user.activityPubProfile, statusId: statusActivityPubId, on: sharedInboxUrl)
-            } catch {
-                context.logger.warning("Sending status delete to shared inbox error. Shared inbox url: \(sharedInboxUrl). Error: \(error).")
-            }
         }
     }
 
@@ -2875,14 +2807,14 @@ final class StatusesService: StatusesServiceType {
     }
 
     func getStatusMentions(statusId: Int64, note: String?, on context: ExecutionContext) async -> [StatusMention] {
-        let searchService = context.services.searchService
+        let activityPubDownloadUserService = context.services.activityPubDownloadUserService
         let userNames = note?.getUserNames() ?? []
         var statusMentions: [StatusMention] = []
 
         for userName in userNames {
             let newStatusMentionId = context.services.snowflakeService.generate()
 
-            let user = try? await searchService.downloadRemoteUser(userName: userName, on: context)
+            let user = try? await activityPubDownloadUserService.downloadIfMissing(userName: userName, on: context)
             let statusMention = StatusMention(id: newStatusMentionId, statusId: statusId, userName: userName, userUrl: user?.url)
             statusMentions.append(statusMention)
         }
@@ -3078,7 +3010,7 @@ final class StatusesService: StatusesServiceType {
         guard let image = Image.create(path: tmpOriginalFileUrl) else {
             throw AttachmentError.createResizedImageFailed
         }
-        
+
         // Read Exif orientation.
         let orientation = ImageOrientation(fileUrl: tmpOriginalFileUrl, on: context.application)
 
@@ -3086,7 +3018,7 @@ final class StatusesService: StatusesServiceType {
         guard let rotatedImage = image.rotate(basedOn: orientation) else {
             throw AttachmentError.imageRotationFailed
         }
-        
+
         // Resize image.
         context.logger.info("Resizing image '\(attachment.url)'.")
         guard let resized = rotatedImage.resizedTo(width: 800) else {
@@ -3280,14 +3212,14 @@ final class StatusesService: StatusesServiceType {
     }
 
     private func getStatusMentions(status: Status, userNames: [NoteTagDto], on context: ExecutionContext) async throws -> [StatusMention] {
-        let searchService = context.services.searchService
+        let activityPubDownloadUserService = context.services.activityPubDownloadUserService
         var statusMentions: [StatusMention] = []
 
         for userName in userNames {
             let newStatusMentionId = context.application.services.snowflakeService.generate()
 
             let user: User? = if let activityubProfile = userName.href {
-                try? await searchService.downloadRemoteUser(activityPubProfile: activityubProfile, on: context)
+                try? await activityPubDownloadUserService.downloadIfNeeded(activityPubProfile: activityubProfile, on: context)
             } else {
                 nil
             }
@@ -3321,7 +3253,7 @@ final class StatusesService: StatusesServiceType {
 
         let size = 100
         var page = 0
-        
+
         // We have to download ancestors when status is comment (in notifications screen we can show main photo which is favourited).
         let ancestors = try await statusesService.ancestors(for: status.requireID(), on: context.db)
 

@@ -12,6 +12,7 @@ extension String {
     public func html(baseAddress: String, wrapInParagraph: Bool = false, userNameMaps: [String: String]? = nil) -> String {
         var lines = self
             .normalizingNewLines()
+            .escapingHtmlAngleBrackets()
             .split(separator: "\n", omittingEmptySubsequences: false)
             .map({ String($0) })
         
@@ -57,6 +58,12 @@ extension String {
         self
             .replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n")
+    }
+
+    private func escapingHtmlAngleBrackets() -> String {
+        self
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
     }
     
     private func convertTagsIntoMarkdown(baseAddress: String) -> String {

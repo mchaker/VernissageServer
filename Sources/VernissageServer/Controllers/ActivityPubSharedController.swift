@@ -8,13 +8,13 @@ import Vapor
 import Queues
 
 extension ActivityPubSharedController: RouteCollection {
-    
+
     @_documentation(visibility: private)
     static let uri: PathComponent = .constant("shared")
-    
+
     func boot(routes: RoutesBuilder) throws {
         let activityPubSharedGroup = routes.grouped(ActivityPubSharedController.uri)
-        
+
         activityPubSharedGroup
             .grouped(EventHandlerMiddleware(.activityPubSharedInbox))
             .grouped(CacheControlMiddleware(.noStore))
@@ -26,7 +26,7 @@ extension ActivityPubSharedController: RouteCollection {
 ///
 /// A shared inbox refers to a central location where messages, activities, or notifications intended
 /// for multiple recipients are collected and distributed. This shared inbox mechanism is crucial for
-/// facilitating communication and interaction between actors in a decentralized social networking ecosystem. 
+/// facilitating communication and interaction between actors in a decentralized social networking ecosystem.
 ///
 /// > Important: Base controller URL: `/shared`.
 struct ActivityPubSharedController {
@@ -36,7 +36,7 @@ struct ActivityPubSharedController {
     /// > Important: Endpoint URL: `/shared/inbox`.
     ///
     /// **CURL request:**
-    /// 
+    ///
     /// ```bash
     /// curl "https://example.com/shared/inbox" \
     /// -X POST \
@@ -128,37 +128,38 @@ struct ActivityPubSharedController {
     ///
     /// - Parameters:
     ///   - request: The Vapor request to the endpoint.
-    ///   
+    ///
     /// - Returns: HTTP status code.
     @Sendable
     func inbox(request: Request) async throws -> HTTPStatus {
-        let activityPubService = request.application.services.activityPubService
+        let instanceBlockedDomainsService = request.application.services.instanceBlockedDomainsService
+        let instanceBlockedUsersService = request.application.services.instanceBlockedUsersService
 
         // Log into file the ActivityPub request.
         request.logger.info("\(request.headers.description)")
         if let bodyString = request.body.string {
             request.logger.info("\(bodyString)")
         }
-        
+
         // Deserialize activity from body.
         guard let activityDto = try request.body.activity() else {
             request.logger.warning("Shared inbox activity has not be deserialized.",
                                    metadata: [Constants.requestMetadata: request.body.bodyValue.loggerMetadata()])
             return HTTPStatus.ok
         }
-        
+
         // Skip requests from domains blocked by the instance.
-        if try await activityPubService.isDomainBlockedByInstance(activity: activityDto, on: request.executionContext) {
+        if try await instanceBlockedDomainsService.isDomainBlockedByInstance(activity: activityDto, on: request.executionContext) {
             request.logger.info("Activity domain blocked by instance (type: \(activityDto.type), id: '\(activityDto.id)', activityPubProfile: \(activityDto.actor.actorIds().first ?? "")")
             return HTTPStatus.ok
         }
 
         // Skip requests from actors blocked by the instance.
-        if try await activityPubService.isActorBlockedByInstance(activity: activityDto, on: request.executionContext) {
+        if try await instanceBlockedUsersService.isActorBlockedByInstance(activity: activityDto, on: request.executionContext) {
             request.logger.info("Activity actor blocked by instance (type: \(activityDto.type), id: '\(activityDto.id)', activityPubProfile: \(activityDto.actor.actorIds().first ?? "")")
             return HTTPStatus.ok
         }
-        
+
         // Add shared activity into queue.
         let bodyHash = request.body.hash()
         request.logger.info("Activity (type: '\(activityDto.type)', id: '\(activityDto.id)', body hash: '\(bodyHash ?? "")').")
@@ -170,7 +171,7 @@ struct ActivityPubSharedController {
                                                        httpMethod: .post,
                                                        httpPath: .sharedInbox,
                                                        receivedAt: Date.now)
-        
+
         // When echo queue driver is used (e.g. during unit tests) we have to execute request immediatelly.
         if let _ = request.application.queues.driver as? EchoQueuesDriver {
             let queue = ActivityPubSharedInboxJob()
@@ -186,7 +187,7 @@ struct ActivityPubSharedController {
                 .queues(.apSharedInbox)
                 .dispatch(ActivityPubSharedInboxJob.self, activityPubRequest)
         }
-        
+
         return HTTPStatus.ok
     }
 }

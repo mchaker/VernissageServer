@@ -213,6 +213,8 @@ final class FollowsService: FollowsServiceType {
     
     public func following(sourceId: Int64, onlyApproved: Bool, linkableParams: LinkableParams, on context: ExecutionContext) async throws -> LinkableResult<User> {
         var queryBuilder = Follow.query(on: context.db)
+            .join(User.self, on: \User.$id == \Follow.$target.$id)
+            .filter(User.self, \.$deletedAt == nil)
             .with(\.$target) { target in
                 target
                     .with(\.$flexiFields)
@@ -291,6 +293,8 @@ final class FollowsService: FollowsServiceType {
     
     public func follows(targetId: Int64, onlyApproved: Bool, linkableParams: LinkableParams, on context: ExecutionContext) async throws -> LinkableResult<User> {
         var queryBuilder = Follow.query(on: context.db)
+            .join(User.self, on: \User.$id == \Follow.$source.$id)
+            .filter(User.self, \.$deletedAt == nil)
             .with(\.$source) { source in
                 source
                     .with(\.$flexiFields)

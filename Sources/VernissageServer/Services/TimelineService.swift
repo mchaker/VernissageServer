@@ -482,6 +482,9 @@ final class TimelineService: TimelineServiceType {
     func featuredStatuses(linkableParams: LinkableParams, onlyLocal: Bool = false, on executionContext: ExecutionContext) async throws -> LinkableResult<Status> {
         var query = FeaturedStatus.query(on: executionContext.db)
             .filter(\.$createdAt > Date.yearAgo)
+            .join(Status.self, on: \Status.$id == \FeaturedStatus.$status.$id)
+            .join(User.self, on: \User.$id == \Status.$user.$id)
+            .filter(User.self, \.$deletedAt == nil)
             .with(\.$status) { status in
                 status.with(\.$attachments) { attachment in
                     attachment.with(\.$originalFile)

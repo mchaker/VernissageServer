@@ -280,10 +280,16 @@ The list below contains definitions of the objects used for communication with V
 
 ### Services
 
-- ``ActivityPubProfileUpdateService``
-- ``ActivityPubService``
-- ``ActivityPubSignatureService``
 - ``AccountMigrationService``
+- ``ActivityPubDownloadCollectionService``
+- ``ActivityPubDownloadStatusService``
+- ``ActivityPubDownloadUserService``
+- ``ActivityPubIncomingService``
+- ``ActivityPubOutgoingCollectionService``
+- ``ActivityPubOutgoingReportService``
+- ``ActivityPubOutgoingStatusService``
+- ``ActivityPubOutgoingUserService``
+- ``ActivityPubSignatureService``
 - ``ArchivesService``
 - ``ArticlesService``
 - ``AtomService``
@@ -303,6 +309,7 @@ The list below contains definitions of the objects used for communication with V
 - ``FollowsService``
 - ``HashtagsService``
 - ``InstanceBlockedDomainsService``
+- ``InstanceBlockedUsersService``
 - ``InvitationsService``
 - ``LocalizablesService``
 - ``LocationsService``
@@ -311,7 +318,6 @@ The list below contains definitions of the objects used for communication with V
 - ``PurgeStatusesService``
 - ``QuickCaptchaService``
 - ``RelationshipsService``
-- ``ReportsService``
 - ``RolesService``
 - ``RssService``
 - ``SearchService``
@@ -334,6 +340,7 @@ The list below contains definitions of the objects used for communication with V
 ### Middlewares
 
 - ``CacheControlMiddleware``
+- ``CustomErrorMiddleware``
 - ``EventHandlerMiddleware``
 - ``LoginHandlerMiddleware``
 - ``GuardIsAdministratorMiddleware``

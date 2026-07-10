@@ -50,7 +50,7 @@ final class UserAliasesService: UserAliasesServiceType {
             return userFromDb.activityPubProfile
         }
 
-        let searchService = context.services.searchService
-        return await searchService.getRemoteActivityPubProfile(userName: normalizedAlias, on: context)
+        let activityPubDownloadUserService = context.services.activityPubDownloadUserService
+        return await activityPubDownloadUserService.resolveActivityPubProfile(userName: normalizedAlias, on: context)
     }
 }

@@ -10,33 +10,39 @@ import Fluent
 import ActivityPubKit
 
 extension Application.Services {
-    struct ReportsServiceKey: StorageKey {
-        typealias Value = ReportsServiceType
+    struct ActivityPubOutgoingReportServiceKey: StorageKey {
+        typealias Value = ActivityPubOutgoingReportServiceType
     }
 
-    var reportsService: ReportsServiceType {
+    var activityPubOutgoingReportService: ActivityPubOutgoingReportServiceType {
         get {
-            self.application.storage[ReportsServiceKey.self] ?? ReportsService()
+            self.application.storage[ActivityPubOutgoingReportServiceKey.self] ?? ActivityPubOutgoingReportService()
         }
         nonmutating set {
-            self.application.storage[ReportsServiceKey.self] = newValue
+            self.application.storage[ActivityPubOutgoingReportServiceKey.self] = newValue
         }
     }
 }
 
 @_documentation(visibility: private)
-protocol ReportsServiceType: Sendable {
-    /// Sends local report as ActivityPub Flag activity to remote instance.
+protocol ActivityPubOutgoingReportServiceType: Sendable {
+    /// Sends a local report as an ActivityPub `Flag` activity to the reported user's remote instance.
+    ///
+    /// The method loads the report with its reported user and optional status from the local database.
+    /// Reports are forwarded only when forwarding is enabled and the reported user is remote. The request is
+    /// signed with the default system user's private key and delivered to the reported user's shared inbox,
+    /// or user inbox when a shared inbox is not available. Missing reports, disabled forwarding, local reported
+    /// users, and invalid inboxes are logged and skipped.
     ///
     /// - Parameters:
-    ///   - reportId: Report identifier.
-    ///   - context: The execution context providing access to services, settings, and the database.
-    /// - Throws: An error if the report cannot be sent.
+    ///   - reportId: The local identifier of the report to forward.
+    ///   - context: The execution context providing services and database access.
+    /// - Throws: Configuration, database, or network errors when the report cannot be forwarded.
     func send(reportId: Int64, on context: ExecutionContext) async throws
 }
 
 /// A service for managing reports in the system.
-final class ReportsService: ReportsServiceType {
+final class ActivityPubOutgoingReportService: ActivityPubOutgoingReportServiceType {
     func send(reportId: Int64, on context: ExecutionContext) async throws {
         guard let report = try await Report.query(on: context.db)
             .with(\.$reportedUser)

@@ -192,6 +192,9 @@ final class TrendingService: TrendingServiceType {
 
         var query = TrendingStatus.query(on: database)
             .filter(\.$trendingPeriod == period)
+            .join(Status.self, on: \Status.$id == \TrendingStatus.$status.$id)
+            .join(User.self, on: \User.$id == \Status.$user.$id)
+            .filter(User.self, \.$deletedAt == nil)
             .with(\.$status) { status in
                 status.with(\.$attachments) { attachment in
                     attachment.with(\.$originalFile)
@@ -245,6 +248,8 @@ final class TrendingService: TrendingServiceType {
 
         var query = TrendingUser.query(on: database)
             .filter(\.$trendingPeriod == period)
+            .join(User.self, on: \User.$id == \TrendingUser.$user.$id)
+            .filter(User.self, \.$deletedAt == nil)
             .with(\.$user) { user in
                 user
                     .with(\.$flexiFields)
@@ -335,7 +340,7 @@ final class TrendingService: TrendingServiceType {
                 AND \(ident: "s").\(ident: "replyToStatusId") IS NULL
                 AND \(ident: "s").\(ident: "visibility") IN (\(bind: StatusVisibility.public.rawValue), \(bind: StatusVisibility.quietPublic.rawValue))
             GROUP BY \(ident: "sf").\(ident: "statusId"), \(ident: "s").\(ident: "createdAt")
-            ORDER BY COUNT(\(ident: "sf").\(ident: "statusId")), \(ident: "s").\(ident: "createdAt") DESC
+            ORDER BY COUNT(\(ident: "sf").\(ident: "statusId")) DESC, \(ident: "s").\(ident: "createdAt") DESC
             LIMIT 1000
         """).all(decoding: TrendingAmount.self)
         

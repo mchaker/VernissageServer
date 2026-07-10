@@ -7,6 +7,7 @@
 import Foundation
 
 /// Source code location.
+@_documentation(visibility: private)
 public struct SourceLocation: Sendable {
 
     /// File in which this location exists.

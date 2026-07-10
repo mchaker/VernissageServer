@@ -31,14 +31,14 @@ protocol ActivityPubSignatureServiceType: Sendable {
     ///   - context: The execution context for services and configuration.
     /// - Throws: Signature errors or ActivityPub-related validation errors.
     func validateSignature(activityPubRequest: ActivityPubRequestDto, on context: ExecutionContext) async throws
-    
+
     /// Validates the HTTP signature in a local ActivityPub request without downloading the user from a remote source.
     /// - Parameters:
     ///   - activityPubRequest: The incoming ActivityPub request DTO containing headers, body, and activity.
     ///   - context: The execution context for services and configuration.
     /// - Throws: Signature errors or ActivityPub-related validation errors.
     func validateLocalSignature(activityPubRequest: ActivityPubRequestDto, on context: ExecutionContext) async throws
-    
+
     /// Validates the cryptographic algorithm specified in the HTTP Signature header of an ActivityPub request.
     /// - Parameters:
     ///   - activityPubRequest: The incoming ActivityPub request DTO containing headers and signature information.
@@ -57,63 +57,64 @@ final class ActivityPubSignatureService: ActivityPubSignatureServiceType {
 
     /// Validate signature.
     public func validateSignature(activityPubRequest: ActivityPubRequestDto, on context: ExecutionContext) async throws {
-        let searchService = context.services.searchService
+        let activityPubDownloadUserService = context.services.activityPubDownloadUserService
         let cryptoService = context.services.cryptoService
-        let activityPubService = context.services.activityPubService
-        
+        let instanceBlockedDomainsService = context.services.instanceBlockedDomainsService
+        let instanceBlockedUsersService = context.services.instanceBlockedUsersService
+
         // Get actor profile URL from signature.
         let signatureActorId = try self.getSignatureActor(activityPubRequest: activityPubRequest)
-        
+
         // Get actor profile URL from payload.
         let payloadActorId = try self.getPayloadActor(activityPubRequest: activityPubRequest)
-        
+
         // Signature owner must match payload actor to prevent spoofing.
         if let payloadActorId, signatureActorId != payloadActorId {
             // TODO: Implement support for action forwarding and data integrity proof.
             // Some of actions we can support even if the signature actor and payload actor are different.
             // https://w3c.github.io/vc-data-integrity/#dfn-data-integrity-proof.
-            
+
             throw ActivityPubError.signatureActorDoesNotMatchPayloadActor(signatureActor: signatureActorId, payloadActor: payloadActorId)
         }
-        
+
         // Check if the actor's domain is blocked by the instance.
-        if try await activityPubService.isDomainBlockedByInstance(activityPubId: signatureActorId, on: context) {
+        if try await instanceBlockedDomainsService.isDomainBlockedByInstance(activityPubId: signatureActorId, on: context) {
             throw ActivityPubError.domainIsBlockedByInstance(signatureActorId)
         }
-        
+
         // Check if the actor is blocked by the instance.
-        if try await activityPubService.isActorBlockedByInstance(activityPubId: signatureActorId, on: context) {
+        if try await instanceBlockedUsersService.isActorBlockedByInstance(activityPubId: signatureActorId, on: context) {
             throw ActivityPubError.actorIsBlockedByInstance(signatureActorId)
         }
-        
+
         // Check if the actor's domain is blocked by the instance.
-        if let payloadActorId,  try await activityPubService.isDomainBlockedByInstance(activityPubId: payloadActorId, on: context) {
+        if let payloadActorId,  try await instanceBlockedDomainsService.isDomainBlockedByInstance(activityPubId: payloadActorId, on: context) {
             throw ActivityPubError.domainIsBlockedByInstance(payloadActorId)
         }
-        
+
         // Check if the actor is blocked by the instance.
-        if let payloadActorId,  try await activityPubService.isActorBlockedByInstance(activityPubId: payloadActorId, on: context) {
+        if let payloadActorId,  try await instanceBlockedUsersService.isActorBlockedByInstance(activityPubId: payloadActorId, on: context) {
             throw ActivityPubError.actorIsBlockedByInstance(payloadActorId)
         }
-        
+
         // Check if request is not old one.
         try self.verifyTimeWindow(activityPubRequest: activityPubRequest)
-        
+
         // Get headers stored as Data.
         let generatedSignatureData = try self.generateSignatureData(activityPubRequest: activityPubRequest)
-        
+
         // Get signature from header (decoded base64 as Data).
         let signatureData = try self.getSignatureData(activityPubRequest: activityPubRequest)
-                
+
         // Download signed profile from remote server.
-        guard let signedUser = try await searchService.downloadRemoteUser(activityPubProfile: signatureActorId, on: context) else {
+        guard let signedUser = try await activityPubDownloadUserService.downloadIfNeeded(activityPubProfile: signatureActorId, on: context) else {
             throw ActivityPubError.userNotExistsInDatabase(signatureActorId)
         }
-        
+
         guard let publicKey = signedUser.publicKey else {
             throw ActivityPubError.publicKeyNotExists(signatureActorId)
         }
-        
+
         // Verify signature with actor's public key.
         let algorithm = try self.getAlgorithm(activityPubRequest: activityPubRequest)
         let isValid = try cryptoService.verifySignature(publicKeyPem: publicKey,
@@ -125,33 +126,33 @@ final class ActivityPubSignatureService: ActivityPubSignatureServiceType {
             throw ActivityPubError.signatureIsNotValid
         }
     }
-    
+
     /// Validate local signature (user is not downloaded from remote).
     public func validateLocalSignature(activityPubRequest: ActivityPubRequestDto, on context: ExecutionContext) async throws {
         let usersService = context.services.usersService
         let cryptoService = context.services.cryptoService
-        
+
         // Check if request is not old one.
         try self.verifyTimeWindow(activityPubRequest: activityPubRequest)
-        
+
         // Get headers stored as Data.
         let generatedSignatureData = try self.generateSignatureData(activityPubRequest: activityPubRequest)
-        
+
         // Get signature from header (decoded base64 as Data).
         let signatureData = try self.getSignatureData(activityPubRequest: activityPubRequest)
-        
+
         // Get actor profile URL from header.
         let actorId = try self.getSignatureActor(activityPubRequest: activityPubRequest)
-                
+
         // Download profile from remote server.
         guard let user = try await usersService.get(activityPubProfile: actorId, on: context.db) else {
             throw ActivityPubError.userNotExistsInDatabase(actorId)
         }
-        
+
         guard let publicKey = user.publicKey else {
             throw ActivityPubError.publicKeyNotExists(actorId)
         }
-                
+
         // Verify signature with actor's public key.
         let algorithm = try self.getAlgorithm(activityPubRequest: activityPubRequest)
         let isValid = try cryptoService.verifySignature(publicKeyPem: publicKey,
@@ -163,15 +164,15 @@ final class ActivityPubSignatureService: ActivityPubSignatureServiceType {
             throw ActivityPubError.signatureIsNotValid
         }
     }
-    
+
     public func validateAlgorithm(activityPubRequest: ActivityPubRequestDto) throws {
         let algorithmValue = try self.getAlgorithm(activityPubRequest: activityPubRequest)
-        
+
         guard SupportedAlgorithm.allCases.contains(where: { $0.rawValue == algorithmValue }) == true else {
             throw ActivityPubError.algorithmNotSupported(String(algorithmValue))
         }
     }
-    
+
     private func getAlgorithm(activityPubRequest: ActivityPubRequestDto) throws -> String {
         guard let signatureHeader = activityPubRequest.headers.keys.first(where: { $0.lowercased() == "signature" }),
               let signatureHeaderValue = activityPubRequest.headers[signatureHeader] else {
@@ -179,23 +180,23 @@ final class ActivityPubSignatureService: ActivityPubSignatureServiceType {
         }
 
         let algorithmRegex = #/algorithm="(?<algorithm>[^"]*)"/#
-        
+
         let algorithmMatch = signatureHeaderValue.firstMatch(of: algorithmRegex)
         guard let algorithmValue = algorithmMatch?.algorithm else {
             throw ActivityPubError.algorithmNotSpecified
         }
-        
+
         return String(algorithmValue)
     }
-    
+
     private func getSignatureData(activityPubRequest: ActivityPubRequestDto) throws -> Data {
         guard let signatureHeader = activityPubRequest.headers.keys.first(where: { $0.lowercased() == "signature" }),
               let signatureHeaderValue = activityPubRequest.headers[signatureHeader] else {
             throw ActivityPubError.missingSignatureHeader
         }
-                
+
         let signatureRegex = #/signature="(?<signature>[^"]*)"/#
-        
+
         let signatureMatch = signatureHeaderValue.firstMatch(of: signatureRegex)
         guard let signature = signatureMatch?.signature else {
             throw ActivityPubError.missingSignatureInHeader
@@ -205,10 +206,10 @@ final class ActivityPubSignatureService: ActivityPubSignatureServiceType {
         guard let signatureData = Data(base64Encoded: String(signature)) else {
             throw ActivityPubError.missingSignatureInHeader
         }
-        
+
         return signatureData
     }
-    
+
     /// https://docs.joinmastodon.org/spec/security/#http-sign
     private func generateSignatureData(activityPubRequest: ActivityPubRequestDto) throws -> Data {
         guard let signatureHeader = activityPubRequest.headers.keys.first(where: { $0.lowercased() == "signature" }),
@@ -217,35 +218,35 @@ final class ActivityPubSignatureService: ActivityPubSignatureServiceType {
         }
 
         let headersRegex = #/headers="(?<headers>[^"]*)"/#
-        
+
         let headersMatch = signatureHeaderValue.firstMatch(of: headersRegex)
         guard let headerNames = headersMatch?.headers.split(separator: " ") else {
             throw ActivityPubError.missingSignedHeadersList
         }
-        
+
         let requestHeaders = activityPubRequest.headers + ["(request-target)": "\(activityPubRequest.httpMethod) \(activityPubRequest.httpPath.path())"]
-        
+
         var headersArray: [String] = []
         for headerName in headerNames {
             guard let signatureHeader = requestHeaders.keys.first(where: { $0.lowercased() == headerName.lowercased() }) else {
                 throw ActivityPubError.missingSignedHeader(String(headerName))
             }
-            
+
             if signatureHeader.lowercased() == "digest" {
                 headersArray.append("\(headerName): SHA-256=\(activityPubRequest.bodyHash ?? "")")
             } else {
                 headersArray.append("\(headerName): \(requestHeaders[signatureHeader] ?? "")")
             }
         }
-                
-        let headersString = headersArray.joined(separator: "\n")        
+
+        let headersString = headersArray.joined(separator: "\n")
         guard let data = headersString.data(using: .ascii) else {
             throw ActivityPubError.signatureDataNotCreated
         }
-        
+
         return data
     }
-    
+
     /// Examples of keyId:
     /// https://mastodon.example/users/mczachurski/main-key
     /// https://gotosocial.example/users/mczachurski#main-key
@@ -254,9 +255,9 @@ final class ActivityPubSignatureService: ActivityPubSignatureServiceType {
               let signatureHeaderValue = activityPubRequest.headers[signatureHeader] else {
             throw ActivityPubError.missingSignatureHeader
         }
-                
+
         let actorKeyRegex = #/keyId="(?<actorKey>[^"]*)"/#
-        
+
         let actorKeyMatch = signatureHeaderValue.firstMatch(of: actorKeyRegex)
         guard let actorKey = actorKeyMatch?.actorKey else {
             throw ActivityPubError.missingKeyIdInHeader
@@ -265,24 +266,24 @@ final class ActivityPubSignatureService: ActivityPubSignatureServiceType {
         guard let activityPubProfile = actorKey.split(separator: "#").first else {
             throw ActivityPubError.missingActivityPubProfileInKeyId(String(actorKey))
         }
-        
+
         let activityPubProfileString = String(activityPubProfile)
         let clearedActivityPubProfile = activityPubProfileString.deletingSuffix("/main-key")
 
         return clearedActivityPubProfile
     }
-    
+
     private func getPayloadActor(activityPubRequest: ActivityPubRequestDto) throws -> String? {
         let actorIds = activityPubRequest.activity.actor.actorIds()
         return actorIds.first
     }
-    
+
     private func verifyTimeWindow(activityPubRequest: ActivityPubRequestDto) throws {
         guard let dateHeader = activityPubRequest.headers.keys.first(where: { $0.lowercased() == "date" }),
               let dateHeaderValue = activityPubRequest.headers[dateHeader] else {
             throw ActivityPubError.missingDateHeader
         }
-        
+
         // RFC 7231 IMF-fixdate compliant date.
         let dateFormatter = DateFormatter()
         dateFormatter.locale = Locale(identifier: "en_US_POSIX")
@@ -292,7 +293,7 @@ final class ActivityPubSignatureService: ActivityPubSignatureServiceType {
         guard let date = dateFormatter.date(from: dateHeaderValue) else {
             throw ActivityPubError.incorrectDateFormat(dateHeaderValue)
         }
-        
+
         let allowedClockDrift: TimeInterval = 300
         let referenceDate = activityPubRequest.receivedAt ?? Date.now
         if date < referenceDate.addingTimeInterval(-allowedClockDrift) || date > referenceDate.addingTimeInterval(allowedClockDrift) {

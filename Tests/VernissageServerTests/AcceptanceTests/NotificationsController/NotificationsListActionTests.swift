@@ -70,6 +70,31 @@ extension ControllersTests {
             #expect(notifications.data.first?.mainStatus != nil, "Notification should contain main status.")
             #expect(notifications.data.first?.mainStatus?.id == statuses.first?.stringId(), "Notification should containt correct main status.")
         }
+
+        @Test
+        func `Notifications list should not return notifications created by deleted users`() async throws {
+            // Arrange.
+            let user1 = try await application.createUser(userName: "ewaroki")
+            let user2 = try await application.createUser(userName: "janroki")
+            let (statuses, attachments) = try await application.createStatuses(user: user1, notePrefix: "Note Notifications Deleted User", amount: 1)
+            defer {
+                application.clearFiles(attachments: attachments)
+            }
+
+            try await application.favouriteStatus(user: user2, status: try #require(statuses.first))
+            try await user2.delete(on: application.db)
+
+            // Act.
+            let notifications = try await application.getResponse(
+                as: .user(userName: "ewaroki", password: "p@ssword"),
+                to: "/notifications",
+                method: .GET,
+                decodeTo: LinkableResultDto<NotificationDto>.self
+            )
+
+            // Assert.
+            #expect(notifications.data.isEmpty, "Notifications created by deleted users should not be returned.")
+        }
         
         @Test
         func `Notifications list should not be returned for unauthorized user`() async throws {

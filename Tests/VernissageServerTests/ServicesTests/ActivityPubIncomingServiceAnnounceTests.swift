@@ -11,8 +11,8 @@ import Queues
 import ActivityPubKit
 import Fluent
 
-@Suite("ActivityPubService (Announce)", .serialized)
-struct ActivityPubServiceAnnounceTests {
+@Suite("ActivityPubIncomingService (Announce)", .serialized)
+struct ActivityPubIncomingServiceAnnounceTests {
 
     var application: Application!
 
@@ -23,7 +23,7 @@ struct ActivityPubServiceAnnounceTests {
     @Test
     func `Duplicate announce delivered to inboxes should create single reblog`() async throws {
         // Arrange.
-        let activityPubService = ActivityPubService()
+        let activityPubIncomingService = ActivityPubIncomingService()
         let queueContext = application.getQueueContext(queueName: QueueName(string: "ActivityPubSharedInboxJob"))
 
         let statusOwner = try await application.createUser(userName: "announceownerlocal")
@@ -66,8 +66,8 @@ struct ActivityPubServiceAnnounceTests {
                                                      receivedAt: Date.now)
 
         // Act.
-        try await activityPubService.announce(activityPubRequest: sharedInboxRequest, on: queueContext.executionContext)
-        try await activityPubService.announce(activityPubRequest: userInboxRequest, on: queueContext.executionContext)
+        try await activityPubIncomingService.announce(activityPubRequest: sharedInboxRequest, on: queueContext.executionContext)
+        try await activityPubIncomingService.announce(activityPubRequest: userInboxRequest, on: queueContext.executionContext)
 
         // Assert.
         let reblogs = try await Status.query(on: application.db)

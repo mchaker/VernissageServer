@@ -29,7 +29,7 @@ extension FollowRequestError: LocalizedTerminateError {
 
     var reason: String {
         switch self {
-        case .missingFollowEntity(let sourceUserId, let targetUserId): return "Follow entity (sourceUserId: '\(sourceUserId)', targetUserId: \(targetUserId) not exists in local database."
+        case .missingFollowEntity(let sourceUserId, let targetUserId): return "Follow entity (sourceUserId: '\(sourceUserId)', targetUserId: \(targetUserId)) not exists in local database."
         case .missingSourceUser(let userId): return "Missing source user '\(userId)' in database."
         case .missingTargetUser(let userId): return "Missing target user '\(userId)' in database."
         case .missingActivityPubActionId: return "Activity Pub action id in follow request is missing."

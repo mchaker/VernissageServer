@@ -337,4 +337,25 @@ extension Status {
             }
         }
     }
+    
+    struct CreateActivityPubUrlIndex: AsyncMigration {
+        func prepare(on database: Database) async throws {
+            if let sqlDatabase = database as? SQLDatabase {
+                try await sqlDatabase
+                    .create(index: "\(Status.schema)_activityPubUrlIndex")
+                    .on(Status.schema)
+                    .column("activityPubUrl")
+                    .run()
+            }
+        }
+
+        func revert(on database: Database) async throws {
+            if let sqlDatabase = database as? SQLDatabase {
+                try await sqlDatabase
+                    .drop(index: "\(Status.schema)_activityPubUrlIndex")
+                    .on(Status.schema)
+                    .run()
+            }
+        }
+    }
 }

@@ -416,4 +416,25 @@ extension User {
                 .update()
         }
     }
+    
+    struct CreateMovedToUserIdIndex: AsyncMigration {
+        func prepare(on database: Database) async throws {
+            if let sqlDatabase = database as? SQLDatabase {
+                try await sqlDatabase
+                    .create(index: "\(User.schema)_movedToUserIdIndex")
+                    .on(User.schema)
+                    .column("movedToUserId")
+                    .run()
+            }
+        }
+
+        func revert(on database: Database) async throws {
+            if let sqlDatabase = database as? SQLDatabase {
+                try await sqlDatabase
+                    .drop(index: "\(User.schema)_movedToUserIdIndex")
+                    .on(User.schema)
+                    .run()
+            }
+        }
+    }
 }
