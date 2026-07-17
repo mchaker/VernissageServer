@@ -212,5 +212,6 @@ extension Application {
         self.migrations.add(Article.AddLanguage())
         self.migrations.add(Attachment.ChangeDescriptionLength())
         self.migrations.add(AttachmentHistory.ChangeDescriptionLength())
+        self.migrations.add(TimelineMarker.CreateTimelineMarkers())
     }
 }

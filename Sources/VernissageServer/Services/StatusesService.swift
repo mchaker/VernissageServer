@@ -2540,6 +2540,11 @@ final class StatusesService: StatusesServiceType {
             .filter(\.$status.$id == statusId)
             .all()
 
+        // We have to delete all timeline markers which point to this status.
+        let timelineMarkers = try await TimelineMarker.query(on: database)
+            .filter(\.$status.$id == statusId)
+            .all()
+
         // We have to delete all notifications which mention that status (direct and thread-main references).
         let notifications = try await Notification.query(on: database)
             .group(.or) { group in
@@ -2627,6 +2632,7 @@ final class StatusesService: StatusesServiceType {
             try await statusBookmarks.delete(on: transaction)
             try await statusFavourites.delete(on: transaction)
             try await statusTrending.delete(on: transaction)
+            try await timelineMarkers.delete(on: transaction)
 
             try await notificationMarkers.delete(on: transaction)
             try await notifications.delete(on: transaction)

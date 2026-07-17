@@ -1037,6 +1037,11 @@ final class UsersService: UsersServiceType {
             .filter(\.$user.$id == userId)
             .delete()
 
+        // Remove timeline marker state owned by this user.
+        try? await TimelineMarker.query(on: database)
+            .filter(\.$user.$id == userId)
+            .delete()
+
         // Remove domain blocks configured by this user.
         try? await UserBlockedDomain.query(on: database)
             .filter(\.$user.$id == userId)
