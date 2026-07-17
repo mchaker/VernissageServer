@@ -159,6 +159,9 @@ enum EventType: String, Codable, CaseIterable {
     case timelinesFeaturedStatuses
     case timelinesFeaturedUsers
     case timelinesHome
+
+    case timelineMarkersRead
+    case timelineMarkersUpdate
     
     case hashtagsFollowed
     case hashtagsFollow
