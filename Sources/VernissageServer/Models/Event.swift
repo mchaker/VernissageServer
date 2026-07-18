@@ -264,6 +264,8 @@ enum EventType: String, Codable, CaseIterable {
     
     case articlesList
     case articlesRead
+    case articlesCount
+    case articlesUpdateMarker
     case articlesCreate
     case articlesUpdate
     case articlesDelete

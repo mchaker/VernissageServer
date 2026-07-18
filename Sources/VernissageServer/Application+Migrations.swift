@@ -213,5 +213,6 @@ extension Application {
         self.migrations.add(Attachment.ChangeDescriptionLength())
         self.migrations.add(AttachmentHistory.ChangeDescriptionLength())
         self.migrations.add(TimelineMarker.CreateTimelineMarkers())
+        self.migrations.add(ArticleMarker.CreateArticleMarkers())
     }
 }
