@@ -34,10 +34,23 @@ extension ArticlesController: RouteCollection {
 
         articlesGroup
             .grouped(UserPayload.guardMiddleware())
+            .grouped(EventHandlerMiddleware(.articlesCount))
+            .grouped(CacheControlMiddleware(.noStore))
+            .get("count", ":language", use: count)
+
+        articlesGroup
+            .grouped(UserPayload.guardMiddleware())
             .grouped(XsrfTokenValidatorMiddleware())
             .grouped(EventHandlerMiddleware(.articlesUpdateMarker))
             .grouped(CacheControlMiddleware(.noStore))
             .post("marker", ":id", use: marker)
+
+        articlesGroup
+            .grouped(UserPayload.guardMiddleware())
+            .grouped(XsrfTokenValidatorMiddleware())
+            .grouped(EventHandlerMiddleware(.articlesUpdateMarker))
+            .grouped(CacheControlMiddleware(.noStore))
+            .post("marker", ":id", ":language", use: marker)
         
         articlesGroup
             .grouped(EventHandlerMiddleware(.articlesRead))
@@ -216,7 +229,9 @@ struct ArticlesController {
 
     /// Amount of new articles visible in the signed-in news section (since article marker).
     ///
-    /// > Important: Endpoint URL: `/api/v1/articles/count`.
+    /// If language is omitted, `en_US` is used.
+    ///
+    /// > Important: Endpoint URL: `/api/v1/articles/count/:language`.
     ///
     /// - Parameters:
     ///   - request: The Vapor request to the endpoint.
@@ -225,9 +240,10 @@ struct ArticlesController {
     @Sendable
     func count(request: Request) async throws -> ArticlesCountDto {
         let authorizationPayloadId = try request.requireUserId()
+        let language = request.parameters.get("language", as: String.self) ?? ArticleMarker.defaultLanguage
 
         let articlesService = request.application.services.articlesService
-        let (count, marker) = try await articlesService.count(for: authorizationPayloadId, on: request.db)
+        let (count, marker) = try await articlesService.count(for: authorizationPayloadId, language: language, on: request.db)
 
         return ArticlesCountDto(amount: count, articleId: marker?.article.stringId())
     }
@@ -236,7 +252,9 @@ struct ArticlesController {
     ///
     /// Only articles visible in the signed-in news section can be saved as a marker.
     ///
-    /// > Important: Endpoint URL: `/api/v1/articles/marker/:id`.
+    /// If language is omitted, `en_US` is used.
+    ///
+    /// > Important: Endpoint URL: `/api/v1/articles/marker/:id/:language`.
     ///
     /// - Parameters:
     ///   - request: The Vapor request to the endpoint.
@@ -248,6 +266,7 @@ struct ArticlesController {
     @Sendable
     func marker(request: Request) async throws -> HTTPResponseStatus {
         let authorizationPayloadId = try request.requireUserId()
+        let language = request.parameters.get("language", as: String.self) ?? ArticleMarker.defaultLanguage
 
         guard let articleIdString = request.parameters.get("id", as: String.self) else {
             throw ArticleError.incorrectArticleId
@@ -267,12 +286,13 @@ struct ArticlesController {
 
         if let marker = try await ArticleMarker.query(on: request.db)
             .filter(\.$user.$id == authorizationPayloadId)
+            .filter(\.$language == language)
             .first() {
             marker.$article.id = articleId
             try await marker.save(on: request.db)
         } else {
             let id = request.application.services.snowflakeService.generate()
-            let articleMarker = ArticleMarker(id: id, articleId: articleId, userId: authorizationPayloadId)
+            let articleMarker = ArticleMarker(id: id, articleId: articleId, userId: authorizationPayloadId, language: language)
             try await articleMarker.create(on: request.db)
         }
 

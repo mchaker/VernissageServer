@@ -28,21 +28,24 @@ extension ControllersTests {
                 userId: author.requireID(),
                 title: "Marker article",
                 body: "Marker body",
-                visibility: .signInNews
+                visibility: .signInNews,
+                language: "pl"
             )
-            _ = try await application.createArticleMarker(user: reader, article: markerArticle)
+            _ = try await application.createArticleMarker(user: reader, article: markerArticle, language: "pl")
 
             _ = try await application.createArticle(
                 userId: author.requireID(),
                 title: "New home article",
                 body: "New home body",
-                visibility: .signInHome
+                visibility: .signInHome,
+                language: "pl"
             )
             _ = try await application.createArticle(
                 userId: author.requireID(),
                 title: "New news article 1",
                 body: "New news body 1",
-                visibility: .signInNews
+                visibility: .signInNews,
+                language: "pl"
             )
             _ = try await application.createArticle(
                 userId: author.requireID(),
@@ -50,11 +53,18 @@ extension ControllersTests {
                 body: "New news body 2",
                 visibility: .signInNews
             )
+            _ = try await application.createArticle(
+                userId: author.requireID(),
+                title: "New news article in another language",
+                body: "New news body in another language",
+                visibility: .signInNews,
+                language: "de"
+            )
 
             // Act.
             let articlesCount = try await application.getResponse(
                 as: .user(userName: "articlescountreader", password: "p@ssword"),
-                to: "/articles/count",
+                to: "/articles/count/pl",
                 method: .GET,
                 decodeTo: ArticlesCountDto.self
             )
@@ -65,6 +75,47 @@ extension ControllersTests {
         }
 
         @Test
+        func `Count should use English US when language is omitted`() async throws {
+            // Arrange.
+            let reader = try await application.createUser(userName: "articlescountdefault")
+            let author = try await application.createUser(userName: "articlescountdefauthor")
+            let markerArticle = try await application.createArticle(
+                userId: author.requireID(),
+                title: "English marker article",
+                body: "English marker body",
+                visibility: .signInNews,
+                language: "en_us"
+            )
+            _ = try await application.createArticleMarker(user: reader, article: markerArticle)
+
+            _ = try await application.createArticle(
+                userId: author.requireID(),
+                title: "New English article",
+                body: "New English body",
+                visibility: .signInNews,
+                language: "en_us"
+            )
+            _ = try await application.createArticle(
+                userId: author.requireID(),
+                title: "New Polish article",
+                body: "New Polish body",
+                visibility: .signInNews,
+                language: "pl"
+            )
+
+            // Act.
+            let articlesCount = try await application.getResponse(
+                as: .user(userName: "articlescountdefault", password: "p@ssword"),
+                to: "/articles/count",
+                method: .GET,
+                decodeTo: ArticlesCountDto.self
+            )
+
+            // Assert.
+            #expect(articlesCount.amount == 1, "Counter should use en_US when language is omitted.")
+        }
+
+        @Test
         func `Count should be zero when marker does not exist`() async throws {
             // Arrange.
             _ = try await application.createUser(userName: "articlescountnomarker")
@@ -72,7 +123,7 @@ extension ControllersTests {
             // Act.
             let articlesCount = try await application.getResponse(
                 as: .user(userName: "articlescountnomarker", password: "p@ssword"),
-                to: "/articles/count",
+                to: "/articles/count/pl",
                 method: .GET,
                 decodeTo: ArticlesCountDto.self
             )
