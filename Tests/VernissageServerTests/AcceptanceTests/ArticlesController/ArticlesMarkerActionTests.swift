@@ -35,7 +35,7 @@ extension ControllersTests {
             // Act.
             let response = try await application.sendRequest(
                 as: .user(userName: "articlesmarkerreader", password: "p@ssword"),
-                to: "/articles/marker/\(article.stringId() ?? "")/pl",
+                to: "/articles/marker/\(article.stringId() ?? "")/PL",
                 method: .POST
             )
 
@@ -130,7 +130,7 @@ extension ControllersTests {
             // Assert.
             #expect(response.status == .ok, "Response HTTP status code should be ok (200).")
             let articleMarker = try #require(await application.getArticleMarker(user: reader))
-            #expect(articleMarker.language == ArticleMarker.defaultLanguage, "Marker should use en_US when language is omitted.")
+            #expect(articleMarker.language == ArticleMarker.defaultLanguage.lowercased(), "Marker should store the default language in lowercase.")
         }
 
         @Test

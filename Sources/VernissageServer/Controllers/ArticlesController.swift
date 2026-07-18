@@ -240,7 +240,7 @@ struct ArticlesController {
     @Sendable
     func count(request: Request) async throws -> ArticlesCountDto {
         let authorizationPayloadId = try request.requireUserId()
-        let language = request.parameters.get("language", as: String.self) ?? ArticleMarker.defaultLanguage
+        let language = (request.parameters.get("language", as: String.self) ?? ArticleMarker.defaultLanguage).lowercased()
 
         let articlesService = request.application.services.articlesService
         let (count, marker) = try await articlesService.count(for: authorizationPayloadId, language: language, on: request.db)
@@ -266,7 +266,7 @@ struct ArticlesController {
     @Sendable
     func marker(request: Request) async throws -> HTTPResponseStatus {
         let authorizationPayloadId = try request.requireUserId()
-        let language = request.parameters.get("language", as: String.self) ?? ArticleMarker.defaultLanguage
+        let language = (request.parameters.get("language", as: String.self) ?? ArticleMarker.defaultLanguage).lowercased()
 
         guard let articleIdString = request.parameters.get("id", as: String.self) else {
             throw ArticleError.incorrectArticleId

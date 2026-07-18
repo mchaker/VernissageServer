@@ -31,7 +31,7 @@ extension Application {
     ) async throws -> ArticleMarker? {
         return try await ArticleMarker.query(on: self.db)
             .filter(\.$user.$id == user.requireID())
-            .filter(\.$language == language)
+            .filter(\.$language == language.lowercased())
             .with(\.$article)
             .first()
     }
