@@ -43,6 +43,14 @@ protocol ArticlesServiceType: Sendable {
     ///   - request: The request containing user and application context.
     /// - Returns: An array of `ArticleVisibilityDto` representing allowed visibilities for the request.
     func allowedVisibilities(on request: Request) -> [ArticleVisibilityDto]
+
+    /// Counts articles visible in signed-in news that were created after the user's marker.
+    /// - Parameters:
+    ///   - userId: The user Id for whom to count articles.
+    ///   - database: The database connection to use.
+    /// - Returns: A tuple containing the count and the article marker (if present).
+    /// - Throws: An error if counting articles fails.
+    func count(for userId: Int64, on database: Database) async throws -> (count: Int, marker: ArticleMarker?)
 }
 
 /// A service for managing articles in the system.
@@ -108,5 +116,22 @@ final class ArticlesService: ArticlesServiceType {
         }
         
         return visibilities
+    }
+
+    func count(for userId: Int64, on database: Database) async throws -> (count: Int, marker: ArticleMarker?) {
+        guard let marker = try await ArticleMarker.query(on: database)
+            .filter(\.$user.$id == userId)
+            .with(\.$article)
+            .first() else {
+            return (count: 0, marker: nil)
+        }
+
+        let count = try await Article.query(on: database)
+            .join(ArticleVisibility.self, on: \ArticleVisibility.$article.$id == \Article.$id)
+            .filter(ArticleVisibility.self, \.$articleVisibilityType == .signInNews)
+            .filter(\.$id > marker.$article.id)
+            .count()
+
+        return (count: count, marker: marker)
     }
 }

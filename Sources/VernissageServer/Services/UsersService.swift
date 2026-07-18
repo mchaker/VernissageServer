@@ -1176,6 +1176,17 @@ final class UsersService: UsersServiceType {
 
         let articleIds = articles.compactMap { $0.id }
 
+        // Remove article markers owned by this user or pointing at this user's articles.
+        try? await ArticleMarker.query(on: database)
+            .group(.or) { group in
+                group.filter(\.$user.$id == userId)
+
+                if articleIds.isEmpty == false {
+                    group.filter(\.$article.$id ~~ articleIds)
+                }
+            }
+            .delete()
+
         // Remove article-read state created by this user or pointing at this user's articles.
         try? await ArticleRead.query(on: database)
             .group(.or) { group in
