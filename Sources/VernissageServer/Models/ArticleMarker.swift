@@ -10,6 +10,7 @@ import Vapor
 /// Last article read by user.
 final class ArticleMarker: Model, @unchecked Sendable {
     static let schema: String = "ArticleMarkers"
+    static let defaultLanguage: String = "en_US"
 
     @ID(custom: .id, generatedBy: .user)
     var id: Int64?
@@ -20,6 +21,9 @@ final class ArticleMarker: Model, @unchecked Sendable {
     @Parent(key: "userId")
     var user: User
 
+    @Field(key: "language")
+    var language: String
+
     @Timestamp(key: "createdAt", on: .create)
     var createdAt: Date?
 
@@ -28,12 +32,13 @@ final class ArticleMarker: Model, @unchecked Sendable {
 
     init() { }
 
-    convenience init(id: Int64, articleId: Int64, userId: Int64) {
+    convenience init(id: Int64, articleId: Int64, userId: Int64, language: String = ArticleMarker.defaultLanguage) {
         self.init()
 
         self.id = id
         self.$article.id = articleId
         self.$user.id = userId
+        self.language = language
     }
 }
 

@@ -9,16 +9,29 @@ import Fluent
 import Vapor
 
 extension Application {
-    func createArticleMarker(user: User, article: Article) async throws -> ArticleMarker {
+    func createArticleMarker(
+        user: User,
+        article: Article,
+        language: String = ArticleMarker.defaultLanguage
+    ) async throws -> ArticleMarker {
         let id = await ApplicationManager.shared.generateId()
-        let articleMarker = try ArticleMarker(id: id, articleId: article.requireID(), userId: user.requireID())
+        let articleMarker = try ArticleMarker(
+            id: id,
+            articleId: article.requireID(),
+            userId: user.requireID(),
+            language: language
+        )
         try await articleMarker.save(on: self.db)
         return articleMarker
     }
 
-    func getArticleMarker(user: User) async throws -> ArticleMarker? {
+    func getArticleMarker(
+        user: User,
+        language: String = ArticleMarker.defaultLanguage
+    ) async throws -> ArticleMarker? {
         return try await ArticleMarker.query(on: self.db)
             .filter(\.$user.$id == user.requireID())
+            .filter(\.$language == language)
             .with(\.$article)
             .first()
     }
