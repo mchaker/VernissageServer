@@ -64,7 +64,7 @@ extension ControllersTests {
             // Act.
             let articlesCount = try await application.getResponse(
                 as: .user(userName: "articlescountreader", password: "p@ssword"),
-                to: "/articles/count/pl",
+                to: "/articles/count/PL",
                 method: .GET,
                 decodeTo: ArticlesCountDto.self
             )

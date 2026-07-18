@@ -120,6 +120,8 @@ final class ArticlesService: ArticlesServiceType {
     }
 
     func count(for userId: Int64, language: String, on database: Database) async throws -> (count: Int, marker: ArticleMarker?) {
+        let language = language.lowercased()
+
         guard let marker = try await ArticleMarker.query(on: database)
             .filter(\.$user.$id == userId)
             .filter(\.$language == language)
@@ -134,7 +136,7 @@ final class ArticlesService: ArticlesServiceType {
             .filter(\.$id > marker.$article.id)
             .group(.or) { group in
                 group
-                    .filter(\.$language == language.lowercased())
+                    .filter(\.$language == language)
                     .filter(\.$language == nil)
             }
             .count()

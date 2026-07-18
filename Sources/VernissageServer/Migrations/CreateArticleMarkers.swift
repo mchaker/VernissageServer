@@ -19,7 +19,7 @@ extension ArticleMarker {
                 .field(.id, .int64, .identifier(auto: false))
                 .field("articleId", .int64, .required, .references(Article.schema, "id"))
                 .field("userId", .int64, .required, .references(User.schema, "id"))
-                .field("language", .varchar(50), .required, .sql(.default(ArticleMarker.defaultLanguage)))
+                .field("language", .varchar(50), .required, .sql(.default(ArticleMarker.defaultLanguage.lowercased())))
                 .field("createdAt", .datetime)
                 .field("updatedAt", .datetime)
                 .unique(on: "userId", "language")
@@ -83,7 +83,7 @@ extension ArticleMarker {
 
             try await database
                 .schema(ArticleMarker.schema)
-                .field("language", .varchar(50), .required, .sql(.default(ArticleMarker.defaultLanguage)))
+                .field("language", .varchar(50), .required, .sql(.default(ArticleMarker.defaultLanguage.lowercased())))
                 .update()
 
             try await database

@@ -38,7 +38,7 @@ final class ArticleMarker: Model, @unchecked Sendable {
         self.id = id
         self.$article.id = articleId
         self.$user.id = userId
-        self.language = language
+        self.language = language.lowercased()
     }
 }
 
