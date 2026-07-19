@@ -73,7 +73,9 @@ extension Application {
         self.queues.add(FlagCreaterJob())
         
         self.queues.add(ActivityPubFollowRequesterJob())
+        self.queues.add(ActivityPubMigrationFollowRequesterJob())
         self.queues.add(ActivityPubFollowResponderJob())
+        self.queues.add(ActivityPubMoveRequesterJob())
     }
 
     private func startQueueWorkers() throws {
@@ -109,6 +111,7 @@ extension Application {
             
             try self.queues.startInProcessJobs(on: .apFollowRequester)
             try self.queues.startInProcessJobs(on: .apFollowResponder)
+            try self.queues.startInProcessJobs(on: .apMoveRequester)
         } else {
             self.logger.notice("All in process queues are disabled in the configuration.")
         }
