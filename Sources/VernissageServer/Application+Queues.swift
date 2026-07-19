@@ -48,6 +48,7 @@ extension Application {
     }
 
     private func registerQueueJobs() {
+        self.queues.add(EmailSenderJob())
         self.queues.add(EmailJob())
         self.queues.add(WebPushSenderJob())
         self.queues.add(UrlValidatorJob())

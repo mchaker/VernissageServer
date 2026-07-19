@@ -24,7 +24,16 @@ extension Application.Services {
 
 @_documentation(visibility: private)
 protocol ActivityPubOutgoingMigrationServiceType: Sendable {
+    /// Sends a signed Follow or Undo Follow request created during an account migration.
+    ///
+    /// - Parameter request: The request containing the activity data, destination inbox, and signing key.
+    /// - Throws: An error if the ActivityPub request cannot be created or delivered.
     func sendFollow(_ request: ActivityPubFollowRequestDto) async throws
+
+    /// Sends a signed Move request created during an account migration.
+    ///
+    /// - Parameter request: The request containing the activity data, destination inbox, and signing key.
+    /// - Throws: An error if the ActivityPub request cannot be created or delivered.
     func sendMove(_ request: ActivityPubMoveRequestDto) async throws
 }
 
