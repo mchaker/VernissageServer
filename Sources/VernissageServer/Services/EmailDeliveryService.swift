@@ -24,11 +24,6 @@ extension Application.Services {
     }
 }
 
-struct EmailDeliveryAttempt: Sendable {
-    let processingToken: String
-    let attempts: Int
-}
-
 @_documentation(visibility: private)
 protocol EmailDeliveryServiceType: Sendable {
     /// Persists an email delivery in the waiting state.

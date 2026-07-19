@@ -130,6 +130,7 @@ a secure HTTP signature, and some are only accessible to registered users of a s
 - ``SharedBusinessCardsController``
 - ``StatusActivityPubEventsController``
 - ``StatusesController``
+- ``TimelineMarkersController``
 - ``TimelinesController``
 - ``TrendingController``
 - ``UserAliasesController``
@@ -148,6 +149,7 @@ The list below contains definitions of the objects used for communication with V
 - ``AccessTokenDto``
 - ``ActivityPubFollowRequestDto``
 - ``ActivityPubFollowRespondDto``
+- ``ActivityPubMoveRequestDto``
 - ``ActivityPubProfileUpdateJobDto``
 - ``ActivityPubReblogDto``
 - ``ActivityPubRequestDto``
@@ -158,6 +160,7 @@ The list below contains definitions of the objects used for communication with V
 - ``AttachmentDescriptionDto``
 - ``ArticleDto``
 - ``ArticleFileInfoDto``
+- ``ArticlesCountDto``
 - ``ArticleVisibilityDto``
 - ``ArchiveDto``
 - ``ArchiveStatusDto``
@@ -180,7 +183,9 @@ The list below contains definitions of the objects used for communication with V
 - ``CountryDto``
 - ``EmailAddressDto``
 - ``EmailDto``
+- ``EmailJobDto``
 - ``EmailSecureMethodDto``
+- ``EmailSenderJobDto``
 - ``ErrorItemDto``
 - ``ErrorItemSourceDto``
 - ``ExifDto``
@@ -208,6 +213,7 @@ The list below contains definitions of the objects used for communication with V
 - ``LocationsJobDto``
 - ``LoginRequestDto``
 - ``MetadataDto``
+- ``MigrationActivityPubEventItemJobDto``
 - ``NotificationDto``
 - ``NotificationTypeDto``
 - ``NotificationsCountDto``
@@ -256,6 +262,8 @@ The list below contains definitions of the objects used for communication with V
 - ``StatusRequestDto``
 - ``StatusVisibilityDto``
 - ``TemporaryAttachmentDto``
+- ``TimelineKindDto``
+- ``TimelineMarkerDto``
 - ``TrendingStatusPeriodDto``
 - ``TwoFactorTokenDto``
 - ``UnfollowRequestDto``
@@ -280,12 +288,14 @@ The list below contains definitions of the objects used for communication with V
 
 ### Services
 
+- ``AccountMigrationActivityPubService``
 - ``AccountMigrationService``
 - ``ActivityPubDownloadCollectionService``
 - ``ActivityPubDownloadStatusService``
 - ``ActivityPubDownloadUserService``
 - ``ActivityPubIncomingService``
 - ``ActivityPubOutgoingCollectionService``
+- ``ActivityPubOutgoingMigrationService``
 - ``ActivityPubOutgoingReportService``
 - ``ActivityPubOutgoingStatusService``
 - ``ActivityPubOutgoingUserService``
@@ -400,6 +410,7 @@ The list below contains definitions of the objects used for communication with V
 - ``StorageError``
 - ``TemporaryFileError``
 - ``TimelineError``
+- ``TimelineMarkerError``
 - ``TwoFactorTokenError``
 - ``UserAliasError``
 - ``UserError``
@@ -466,6 +477,7 @@ The list below contains definitions of the objects used for communication with V
 - ``ApplicationSettings``
 - ``Article``
 - ``ArticleFileInfo``
+- ``ArticleMarker``
 - ``ArticleRead``
 - ``ArticleVisibility``
 - ``ArticleVisibilityType``
@@ -483,6 +495,7 @@ The list below contains definitions of the objects used for communication with V
 - ``Country``
 - ``DisposableEmail``
 - ``EmailDelivery``
+- ``EmailDeliveryAttempt``
 - ``EmailDeliveryStatus``
 - ``ErrorItem``
 - ``ErrorItemSource``
@@ -548,6 +561,8 @@ The list below contains definitions of the objects used for communication with V
 - ``StatusMentionHistory``
 - ``StatusVisibility``
 - ``SuspendedServer``
+- ``TimelineKind``
+- ``TimelineMarker``
 - ``TrendingHashtag``
 - ``TrendingPeriod``
 - ``TrendingStatus``
