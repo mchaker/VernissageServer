@@ -215,5 +215,10 @@ extension Application {
         self.migrations.add(TimelineMarker.CreateTimelineMarkers())
         self.migrations.add(ArticleMarker.CreateArticleMarkers())
         self.migrations.add(ArticleMarker.AddLanguageColumn())
+
+        self.migrations.add(MigrationFollowActivityPubEvent.CreateMigrationFollowActivityPubEvents())
+        self.migrations.add(MigrationFollowActivityPubEventItem.CreateMigrationFollowActivityPubEventItems())
+        self.migrations.add(MigrationMoveActivityPubEvent.CreateMigrationMoveActivityPubEvents())
+        self.migrations.add(MigrationMoveActivityPubEventItem.CreateMigrationMoveActivityPubEventItems())
     }
 }

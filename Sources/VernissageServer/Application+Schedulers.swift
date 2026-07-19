@@ -32,6 +32,7 @@ extension Application {
         
         self.queues.schedule(RescheduleActivityPubJob()).hourly().at(15)
         self.queues.schedule(RescheduleActivityPubJob()).hourly().at(45)
+        self.queues.schedule(RescheduleAccountMigrationActivityPubJob()).every(minutes: 5)
     }
 
     private func registerNightJobs() {

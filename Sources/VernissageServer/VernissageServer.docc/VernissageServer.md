@@ -409,6 +409,8 @@ The list below contains definitions of the objects used for communication with V
 ### Queue Background Jobs
 
 - ``ActivityPubFollowRequesterJob``
+- ``ActivityPubMigrationFollowRequesterJob``
+- ``ActivityPubMoveRequesterJob``
 - ``ActivityPubFollowResponderJob``
 - ``ActivityPubProfileUpdateJob``
 - ``ActivityPubSharedInboxJob``
@@ -445,6 +447,7 @@ The list below contains definitions of the objects used for communication with V
 - ``LongPeriodTrendingJob``
 - ``PurgeStatusesJob``
 - ``RescheduleActivityPubJob``
+- ``RescheduleAccountMigrationActivityPubJob``
 - ``ShortPeriodTrendingJob``
 
 ### OAuth
@@ -501,6 +504,13 @@ The list below contains definitions of the objects used for communication with V
 - ``LinkableResult``
 - ``Localizable``
 - ``Location``
+- ``MigrationActivityPubEventItemStatus``
+- ``MigrationActivityPubEventResult``
+- ``MigrationFollowActivityPubEvent``
+- ``MigrationFollowActivityPubEventItem``
+- ``MigrationFollowActivityPubEventItemType``
+- ``MigrationMoveActivityPubEvent``
+- ``MigrationMoveActivityPubEventItem``
 - ``Notification``
 - ``NotificationMarker``
 - ``NotificationType``
