@@ -300,6 +300,7 @@ The list below contains definitions of the objects used for communication with V
 - ``ClearDeletedUsersService``
 - ``CollectionsService``
 - ``CryptoService``
+- ``EmailDeliveryService``
 - ``EmailsService``
 - ``ErrorItemsService``
 - ``ExternalUsersService``
@@ -419,6 +420,7 @@ The list below contains definitions of the objects used for communication with V
 - ``ActivityPubUserOutboxJob``
 - ``CollectionUpdaterJob``
 - ``EmailJob``
+- ``EmailSenderJob``
 - ``FlagCreaterJob``
 - ``FollowingImporterJob``
 - ``StatusCreaterJob``
@@ -443,6 +445,7 @@ The list below contains definitions of the objects used for communication with V
 - ``ClearQuickCaptchasJob``
 - ``CreateArchiveJob``
 - ``DeleteArchiveJob``
+- ``EmailSchedulerJob``
 - ``LocationsJob``
 - ``LongPeriodTrendingJob``
 - ``PurgeStatusesJob``
@@ -479,6 +482,8 @@ The list below contains definitions of the objects used for communication with V
 - ``CategoryHashtag``
 - ``Country``
 - ``DisposableEmail``
+- ``EmailDelivery``
+- ``EmailDeliveryStatus``
 - ``ErrorItem``
 - ``ErrorItemSource``
 - ``Event``

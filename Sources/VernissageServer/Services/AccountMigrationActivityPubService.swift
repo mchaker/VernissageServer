@@ -29,10 +29,42 @@ extension Application.Services {
 
 @_documentation(visibility: private)
 protocol AccountMigrationActivityPubServiceType: Sendable {
+    /// Enqueues the specified persistent Follow and Move migration items for background processing.
+    ///
+    /// - Parameters:
+    ///   - followItemIds: The identifiers of Follow or Undo Follow delivery items to enqueue.
+    ///   - moveItemIds: The identifiers of Move delivery items to enqueue.
+    ///   - context: The execution context providing access to job queues and logging.
     func dispatch(followItemIds: [Int64], moveItemIds: [Int64], on context: ExecutionContext) async
+
+    /// Finds pending or abandoned migration delivery items and enqueues them for processing.
+    ///
+    /// - Parameter context: The execution context providing access to the database and job queues.
+    /// - Throws: An error if the pending items cannot be read from the database.
     func dispatchPending(on context: ExecutionContext) async throws
+
+    /// Claims and processes a persistent Follow or Undo Follow migration delivery item.
+    ///
+    /// - Parameters:
+    ///   - itemId: The identifier of the migration delivery item to process.
+    ///   - context: The execution context providing access to the database and application services.
+    /// - Throws: An error if the item cannot be processed or its state cannot be persisted.
     func processFollow(itemId: Int64, on context: ExecutionContext) async throws
+
+    /// Claims and processes a persistent Move migration delivery item.
+    ///
+    /// - Parameters:
+    ///   - itemId: The identifier of the migration delivery item to process.
+    ///   - context: The execution context providing access to the database and application services.
+    /// - Throws: An error if the item cannot be processed or its state cannot be persisted.
     func processMove(itemId: Int64, on context: ExecutionContext) async throws
+
+    /// Cancels unfinished migration delivery items created for the specified source user.
+    ///
+    /// - Parameters:
+    ///   - sourceUserId: The identifier of the local user whose migration deliveries should be cancelled.
+    ///   - context: The execution context providing access to the database.
+    /// - Throws: An error if the delivery items or their aggregate events cannot be updated.
     func cancel(sourceUserId: Int64, on context: ExecutionContext) async throws
 }
 

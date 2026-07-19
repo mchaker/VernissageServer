@@ -220,5 +220,6 @@ extension Application {
         self.migrations.add(MigrationFollowActivityPubEventItem.CreateMigrationFollowActivityPubEventItems())
         self.migrations.add(MigrationMoveActivityPubEvent.CreateMigrationMoveActivityPubEvents())
         self.migrations.add(MigrationMoveActivityPubEventItem.CreateMigrationMoveActivityPubEventItems())
+        self.migrations.add(EmailDelivery.CreateEmailDeliveries())
     }
 }
