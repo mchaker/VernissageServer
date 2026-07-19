@@ -10,10 +10,3 @@ import Vapor
 struct EmailSenderJobDto: Content {
     let emailDeliveryId: Int64
 }
-
-/// Payload handed from `EmailSenderJob` to the SMTP-specific `EmailJob`.
-struct EmailJobDto: Content {
-    let emailDeliveryId: Int64
-    let processingToken: String
-    let email: EmailDto
-}
