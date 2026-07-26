@@ -253,6 +253,15 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
                     continue
                 }
 
+                let shouldSuppressStatus = try await self.shouldSuppressStatus(noteDto: noteDto,
+                                                                               activity: activity,
+                                                                               activityPubProfile: activityPubProfile,
+                                                                               on: context)
+                if shouldSuppressStatus {
+                    context.logger.warning("Status from suppressed user '\(activityPubProfile)' will not be added to the system (activity: \(activity.id)).")
+                    return
+                }
+
                 // Determine whether the incoming status is public, quiet public, followers-only, or mentioned.
                 let statusVisibility = self.resolveStatusVisibility(noteDto: noteDto, activity: activity)
 
@@ -1228,6 +1237,23 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
             .count()
 
         return followers > 0
+    }
+
+    private func shouldSuppressStatus(noteDto: NoteDto,
+                                      activity: ActivityDto,
+                                      activityPubProfile: String,
+                                      on context: ExecutionContext) async throws -> Bool {
+        guard activity.type == .create,
+              noteDto.isComment() == false,
+              let attachments = noteDto.attachment,
+              attachments.isEmpty == false,
+              attachments.hasSupportedImages() else {
+            return false
+        }
+
+        let usersService = context.services.usersService
+        let user = try await usersService.get(activityPubProfile: activityPubProfile, on: context.db)
+        return user?.isSuppressed == true
     }
 
     private func resolveStatusVisibility(noteDto: NoteDto, activity: ActivityDto) -> StatusVisibility {

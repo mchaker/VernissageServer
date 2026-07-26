@@ -514,6 +514,7 @@ The list below contains definitions of the objects used for communication with V
 - ``FollowingImportItem``
 - ``FollowingImportItemStatus``
 - ``FollowingImportStatus``
+- ``HashtagSearchResult``
 - ``HomeCard``
 - ``InstanceBlockedDomain``
 - ``Invitation``

@@ -61,6 +61,8 @@ enum EventType: String, Codable, CaseIterable {
     case usersUnmute
     case usersEnable
     case usersDisable
+    case usersSuppress
+    case usersUnsuppress
     case usersBlock
     case usersUnblock
     case usersSupporter
