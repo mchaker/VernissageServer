@@ -1586,12 +1586,18 @@ final class UsersService: UsersServiceType {
             userDto.emailWasConfirmed = user.emailWasConfirmed
             userDto.locale = user.locale
             userDto.isBlocked = user.isBlocked
+            userDto.isSuppressed = user.isSuppressed
             userDto.isApproved = user.isApproved
             userDto.twoFactorEnabled = user.twoFactorEnabled
             userDto.manuallyApprovesFollowers = user.manuallyApprovesFollowers
             userDto.lastLoginDate = user.lastLoginDate
             userDto.isSupporter = user.isSupporter
             userDto.reason = user.reason
+        }
+        
+        if user.isLocal == false {
+            userDto.isBlocked = user.isBlocked
+            userDto.isSuppressed = user.isSuppressed
         }
 
         return userDto
