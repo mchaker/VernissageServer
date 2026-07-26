@@ -221,5 +221,6 @@ extension Application {
         self.migrations.add(MigrationMoveActivityPubEvent.CreateMigrationMoveActivityPubEvents())
         self.migrations.add(MigrationMoveActivityPubEventItem.CreateMigrationMoveActivityPubEventItems())
         self.migrations.add(EmailDelivery.CreateEmailDeliveries())
+        self.migrations.add(StatusHashtag.AddHashtagNormalizedPatternIndex())
     }
 }
