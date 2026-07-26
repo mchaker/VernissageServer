@@ -744,6 +744,11 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
             return
         }
 
+        if remoteUser.isSuppressed {
+            context.logger.warning("Boost from suppressed user '\(actorActivityPubId)' will not be added to the system (activity: \(activity.id)).")
+            return
+        }
+
         for object in objects {
             // Check if announced object is from instance blocked domain.
             if try await instanceBlockedDomainsService.isDomainBlockedByInstance(activityPubId: object.id, on: context) {
@@ -751,10 +756,15 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
                 continue
             }
 
+            if try await self.isOwnerSuppressed(of: object, on: context) {
+                context.logger.warning("Boosted status '\(object.id)' belongs to a suppressed user and will not be added to the system (activity: \(activity.id)).")
+                continue
+            }
+
             // Create (or get from local database) main status in local database.
             let downloadedStatus = try await self.downloadStatusSuppressingErrors(activityPubId: object.id, on: context)
             guard let downloadedStatus else {
-                context.logger.warning("Boosted status '\(object.id)' has not been downloaded because it's not an image (activity: \(activity.id)).")
+                context.logger.warning("Boosted status '\(object.id)' has not been added to the system (activity: \(activity.id)).")
                 continue
             }
 
@@ -821,6 +831,15 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
                 try await statusesService.createOnLocalTimelineForHashtagsFollowers(status: mainStatusFromDatabase, on: context)
             }
         }
+    }
+
+    private func isOwnerSuppressed(of object: ObjectDto, on context: ExecutionContext) async throws -> Bool {
+        guard let noteDto = object.object as? NoteDto,
+              let user = try await context.services.usersService.get(activityPubProfile: noteDto.attributedTo, on: context.db) else {
+            return false
+        }
+
+        return user.isSuppressed
     }
 
     public func flag(activityPubRequest: ActivityPubRequestDto, on context: ExecutionContext) async throws {
@@ -892,6 +911,8 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
             // Consume this kind of error (it’s not a real error - statuses without images are simply not supported).
         } catch StatusError.cannotAddCommentWithoutCommentedStatus {
             // Consume this kind of error (it’s not a real error - we cannot create comment to not exists status).
+        } catch ActivityPubError.actorIsSuppressedByInstance {
+            // Consume this kind of error (status belongs to an intentionally suppressed actor).
         }
 
         return nil
