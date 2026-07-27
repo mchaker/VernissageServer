@@ -223,5 +223,11 @@ extension Application {
         self.migrations.add(EmailDelivery.CreateEmailDeliveries())
         self.migrations.add(StatusHashtag.AddHashtagNormalizedPatternIndex())
         self.migrations.add(User.AddIsSuppressedField())
+        self.migrations.add(Camera.CreateCameras())
+        self.migrations.add(Lens.CreateLenses())
+        self.migrations.add(Film.CreateFilms())
+        self.migrations.add(CameraStatus.CreateCameraStatuses())
+        self.migrations.add(LensStatus.CreateLensStatuses())
+        self.migrations.add(FilmStatus.CreateFilmStatuses())
     }
 }
