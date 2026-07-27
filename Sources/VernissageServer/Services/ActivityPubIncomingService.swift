@@ -197,7 +197,7 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
                 }
 
                 // Signature verified, we can delete status.
-                try await statusesService.delete(id: statusToDelete.requireID(), on: context.application.db)
+                try await statusesService.delete(id: statusToDelete.requireID(), on: context)
                 context.logger.info("Deleting status: '\(object.id)'. Status deleted from local database successfully.")
             case .person, .service, .none:
                 context.logger.info("Deleting user: '\(object.id)'.")
@@ -1003,7 +1003,7 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
 
         let statusId = try status.requireID()
         context.logger.info("Deleting status '\(statusId)' (reblog) from local database.")
-        try await statusesService.delete(id: statusId, on: context.db)
+        try await statusesService.delete(id: statusId, on: context)
 
         context.logger.info("Recalculating reblogs for orginal status '\(orginalStatusId)' in local database.")
         try await statusesService.updateReblogsCount(for: orginalStatusId, on: context.db)

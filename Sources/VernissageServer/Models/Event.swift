@@ -119,6 +119,10 @@ enum EventType: String, Codable, CaseIterable {
     case categoriesDelete
     case categoriesEnable
     case categoriesDisable
+
+    case camerasList
+    case lensesList
+    case filmsList
     
     case licensesList
     case licensesCreate
@@ -157,6 +161,9 @@ enum EventType: String, Codable, CaseIterable {
     
     case timelinesPublic
     case timelinesCategories
+    case timelinesCameras
+    case timelinesLenses
+    case timelinesFilms
     case timelinesHashtags
     case timelinesFeaturedStatuses
     case timelinesFeaturedUsers

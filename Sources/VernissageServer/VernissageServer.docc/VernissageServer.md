@@ -96,11 +96,13 @@ a secure HTTP signature, and some are only accessible to registered users of a s
 - ``AvatarsController``
 - ``BookmarksController``
 - ``BusinessCardsController``
+- ``CamerasController``
 - ``CategoriesController``
 - ``CountriesController``
 - ``ErrorItemsController``
 - ``ExportsController``
 - ``FavouritesController``
+- ``FilmsController``
 - ``FollowingImportsController``
 - ``FollowRequestsController``
 - ``HashtagsController``
@@ -112,6 +114,7 @@ a secure HTTP signature, and some are only accessible to registered users of a s
 - ``InstanceController``
 - ``InvitationsController``
 - ``LicensesController``
+- ``LensesController``
 - ``LocationsController``
 - ``NodeInfoController``
 - ``NotificationsController``
@@ -313,6 +316,7 @@ The list below contains definitions of the objects used for communication with V
 - ``EmailDeliveryService``
 - ``EmailsService``
 - ``ErrorItemsService``
+- ``ExifService``
 - ``ExternalUsersService``
 - ``FailedLoginsService``
 - ``FlexiFieldService``
@@ -378,6 +382,7 @@ The list below contains definitions of the objects used for communication with V
 - ``EntityForbiddenError``
 - ``EntityNotFoundError``
 - ``ErrorItemError``
+- ``ExifServiceError``
 - ``ExportsError``
 - ``FollowImportError``
 - ``FollowRequestError``
@@ -490,6 +495,8 @@ The list below contains definitions of the objects used for communication with V
 - ``AuthClientType``
 - ``BusinessCard``
 - ``BusinessCardField``
+- ``Camera``
+- ``CameraStatus``
 - ``Category``
 - ``CategoryHashtag``
 - ``Country``
@@ -508,6 +515,8 @@ The list below contains definitions of the objects used for communication with V
 - ``FeaturedUser``
 - ``FeaturedStatus``
 - ``FileInfo``
+- ``Film``
+- ``FilmStatus``
 - ``FlexiField``
 - ``Follow``
 - ``FollowingImport``
@@ -518,6 +527,8 @@ The list below contains definitions of the objects used for communication with V
 - ``HomeCard``
 - ``InstanceBlockedDomain``
 - ``Invitation``
+- ``Lens``
+- ``LensStatus``
 - ``ImageOrientation``
 - ``License``
 - ``LinkableResult``
