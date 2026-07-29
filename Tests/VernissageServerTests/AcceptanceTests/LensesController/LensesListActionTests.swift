@@ -63,6 +63,38 @@ extension ControllersTests {
         }
 
         @Test
+        func `Lenses should be filtered by normalized name prefix`() async throws {
+            // Arrange.
+            _ = try await application.createUser(userName: "lensesquery")
+
+            let matchingLens = Lens(
+                id: application.services.snowflakeService.generate(),
+                name: "Lens query matching"
+            )
+            let nonMatchingLens = Lens(
+                id: application.services.snowflakeService.generate(),
+                name: "Other lens query matching"
+            )
+            try await [matchingLens, nonMatchingLens].create(on: application.db)
+
+            // Act.
+            let lenses = try await application.getResponse(
+                as: .user(userName: "lensesquery", password: "p@ssword"),
+                to: "/lenses?query=lens%20query",
+                method: .GET,
+                decodeTo: PaginableResultDto<LensDto>.self
+            )
+
+            // Assert.
+            #expect(lenses.data.map(\.name) == ["Lens query matching"])
+            #expect(lenses.total == 1)
+
+            try await Lens.query(on: application.db)
+                .filter(\.$name ~~ ["Lens query matching", "Other lens query matching"])
+                .delete()
+        }
+
+        @Test
         func `Anonymous access should depend on lenses setting`() async throws {
             // Arrange.
             try await application.updateSetting(key: .showLensesForAnonymous, value: .boolean(false))

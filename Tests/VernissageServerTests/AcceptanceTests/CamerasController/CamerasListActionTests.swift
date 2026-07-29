@@ -63,6 +63,38 @@ extension ControllersTests {
         }
 
         @Test
+        func `Cameras should be filtered by normalized name prefix`() async throws {
+            // Arrange.
+            _ = try await application.createUser(userName: "camerasquery")
+
+            let matchingCamera = Camera(
+                id: application.services.snowflakeService.generate(),
+                name: "Camera query matching"
+            )
+            let nonMatchingCamera = Camera(
+                id: application.services.snowflakeService.generate(),
+                name: "Other camera query matching"
+            )
+            try await [matchingCamera, nonMatchingCamera].create(on: application.db)
+
+            // Act.
+            let cameras = try await application.getResponse(
+                as: .user(userName: "camerasquery", password: "p@ssword"),
+                to: "/cameras?query=camera%20query",
+                method: .GET,
+                decodeTo: PaginableResultDto<CameraDto>.self
+            )
+
+            // Assert.
+            #expect(cameras.data.map(\.name) == ["Camera query matching"])
+            #expect(cameras.total == 1)
+
+            try await Camera.query(on: application.db)
+                .filter(\.$name ~~ ["Camera query matching", "Other camera query matching"])
+                .delete()
+        }
+
+        @Test
         func `Anonymous access should depend on cameras setting`() async throws {
             // Arrange.
             try await application.updateSetting(key: .showCamerasForAnonymous, value: .boolean(false))

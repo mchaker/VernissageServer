@@ -63,6 +63,38 @@ extension ControllersTests {
         }
 
         @Test
+        func `Films should be filtered by normalized name prefix`() async throws {
+            // Arrange.
+            _ = try await application.createUser(userName: "filmsquery")
+
+            let matchingFilm = Film(
+                id: application.services.snowflakeService.generate(),
+                name: "Film query matching"
+            )
+            let nonMatchingFilm = Film(
+                id: application.services.snowflakeService.generate(),
+                name: "Other film query matching"
+            )
+            try await [matchingFilm, nonMatchingFilm].create(on: application.db)
+
+            // Act.
+            let films = try await application.getResponse(
+                as: .user(userName: "filmsquery", password: "p@ssword"),
+                to: "/films?query=film%20query",
+                method: .GET,
+                decodeTo: PaginableResultDto<FilmDto>.self
+            )
+
+            // Assert.
+            #expect(films.data.map(\.name) == ["Film query matching"])
+            #expect(films.total == 1)
+
+            try await Film.query(on: application.db)
+                .filter(\.$name ~~ ["Film query matching", "Other film query matching"])
+                .delete()
+        }
+
+        @Test
         func `Anonymous access should depend on films setting`() async throws {
             // Arrange.
             try await application.updateSetting(key: .showFilmsForAnonymous, value: .boolean(false))

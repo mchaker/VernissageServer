@@ -40,6 +40,7 @@ struct FilmsController {
     /// Optional query params:
     /// - `page` - number of page to return
     /// - `size` - limit amount of returned entities on one page (default: 10)
+    /// - `query` - filter films whose normalized name starts with the specified value
     ///
     /// > Important: Endpoint URL: `/api/v1/films`.
     ///
@@ -82,8 +83,16 @@ struct FilmsController {
 
         let page: Int = request.query["page"] ?? 0
         let size: Int = request.query["size"] ?? 10
+        let query: String? = request.query["query"]
 
-        let filmsFromDatabase = try await Film.query(on: request.db)
+        let filmsFromDatabaseQueryBuilder = Film.query(on: request.db)
+
+        if let query, query.isEmpty == false {
+            filmsFromDatabaseQueryBuilder
+                .filter(\.$nameNormalized =~ query.uppercased())
+        }
+
+        let filmsFromDatabase = try await filmsFromDatabaseQueryBuilder
             .sort(\.$amount, .descending)
             .sort(\.$name, .ascending)
             .paginate(PageRequest(page: page, per: size))
