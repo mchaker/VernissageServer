@@ -40,6 +40,7 @@ struct LensesController {
     /// Optional query params:
     /// - `page` - number of page to return
     /// - `size` - limit amount of returned entities on one page (default: 10)
+    /// - `query` - filter lenses whose normalized name starts with the specified value
     ///
     /// > Important: Endpoint URL: `/api/v1/lenses`.
     ///
@@ -82,8 +83,16 @@ struct LensesController {
 
         let page: Int = request.query["page"] ?? 0
         let size: Int = request.query["size"] ?? 10
+        let query: String? = request.query["query"]
 
-        let lensesFromDatabase = try await Lens.query(on: request.db)
+        let lensesFromDatabaseQueryBuilder = Lens.query(on: request.db)
+
+        if let query, query.isEmpty == false {
+            lensesFromDatabaseQueryBuilder
+                .filter(\.$nameNormalized =~ query.uppercased())
+        }
+
+        let lensesFromDatabase = try await lensesFromDatabaseQueryBuilder
             .sort(\.$amount, .descending)
             .sort(\.$name, .ascending)
             .paginate(PageRequest(page: page, per: size))
