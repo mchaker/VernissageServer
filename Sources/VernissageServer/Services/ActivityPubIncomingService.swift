@@ -335,7 +335,7 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
                     }
 
                     // Get main status (from chain of comments).
-                    if let mainStatus = try await statusesService.getMainStatus(for: parentStatusFromDatabase.requireID(), on: context.db) {
+                    if let mainStatus = try await statusesService.getMainStatus(for: parentStatusFromDatabase.requireID(), on: context) {
                         // We have to check if the author of main status doesn't block the user.
                         let isUserBlockedByStatusAuthor = try await userBlockedUsersService.exists(userId: mainStatus.$user.id,
                                                                                                    blockedUserId: user.requireID(),
@@ -659,7 +659,7 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
 
             if let targetUser = try await usersService.get(id: targetUserId, on: context.db) {
                 // We have to download ancestors when favourited is comment (in notifications screen we can show main photo which is favourited).
-                let ancestors = try await statusesService.ancestors(for: statusId, on: context.db)
+                let ancestors = try await statusesService.ancestors(for: statusId, on: context)
 
                 // Create notification.
                 try await notificationsService.create(type: .favourite,
@@ -874,7 +874,7 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
         }
 
         let reportedStatusId = try reportedStatus?.requireID()
-        let mainStatus = try await statusesService.getMainStatus(for: reportedStatusId, on: context.db)
+        let mainStatus = try await statusesService.getMainStatus(for: reportedStatusId, on: context)
         let reportId = context.services.snowflakeService.generate()
 
         let report = Report(id: reportId,

@@ -337,10 +337,10 @@ protocol StatusesServiceType: Sendable {
     ///
     /// - Parameters:
     ///   - id: The status identifier.
-    ///   - database: The database to query against.
+    ///   - context: The execution context for database and services.
     /// - Returns: The main ``Status`` if found; otherwise nil.
     /// - Throws: An error if the database query fails.
-    func getMainStatus(for: Int64?, on database: Database) async throws -> Status?
+    func getMainStatus(for: Int64?, on context: ExecutionContext) async throws -> Status?
 
     /// Deletes all statuses owned by a user.
     ///
@@ -431,19 +431,19 @@ protocol StatusesServiceType: Sendable {
     ///
     /// - Parameters:
     ///   - statusId: The status identifier.
-    ///   - database: The database to query.
+    ///   - context: The execution context for database and services.
     /// - Returns: An array of ancestor statuses.
     /// - Throws: An error if the query fails.
-    func ancestors(for statusId: Int64, on database: Database) async throws -> [Status]
+    func ancestors(for statusId: Int64, on context: ExecutionContext) async throws -> [Status]
 
     /// Retrieves descendant statuses in a comment chain.
     ///
     /// - Parameters:
     ///   - statusId: The status identifier.
-    ///   - database: The database to query.
+    ///   - context: The execution context for database and services.
     /// - Returns: An array of descendant statuses.
     /// - Throws: An error if the query fails.
-    func descendants(for statusId: Int64, on database: Database) async throws -> [Status]
+    func descendants(for statusId: Int64, on context: ExecutionContext) async throws -> [Status]
 
     /// Retrieves a paginated list of users who have reblogged the specified status.
     ///
@@ -784,7 +784,7 @@ final class StatusesService: StatusesServiceType {
                 }
 
                 // We have to get first status in the tree.
-                let mainStatus = try await self.getMainStatus(for: replyToStatusId, on: context.application.db)
+                let mainStatus = try await self.getMainStatus(for: replyToStatusId, on: context)
                 let firstStatus = mainStatus ?? commentedStatus
 
                 if firstStatus.isLocal {
@@ -1010,7 +1010,7 @@ final class StatusesService: StatusesServiceType {
         let downloadedEmojis = try await self.downloadEmojis(emojis: emojis, on: context)
 
         // We can save also main status when we are adding new comment.
-        let mainStatus = try await self.getMainStatus(for: replyToStatus?.id, on: context.db)
+        let mainStatus = try await self.getMainStatus(for: replyToStatus?.id, on: context)
 
         let category = try await self.getCategory(basedOn: hashtags, and: categories, on: context)
         let exifService = context.services.exifService
@@ -1152,7 +1152,7 @@ final class StatusesService: StatusesServiceType {
 
         // We can save also main status when we are adding new comment.
         let statusesService = request.application.services.statusesService
-        let mainStatus = try await statusesService.getMainStatus(for: statusRequestDto.replyToStatusId?.toId(), on: request.db)
+        let mainStatus = try await statusesService.getMainStatus(for: statusRequestDto.replyToStatusId?.toId(), on: request.executionContext)
 
         let baseAddress = request.application.settings.cached?.baseAddress ?? ""
         let attachmentsFromDatabase = attachments
@@ -1908,7 +1908,7 @@ final class StatusesService: StatusesServiceType {
             return
         }
 
-        let mainStatus = try await self.getMainStatus(for: toStatusId, on: context.db)
+        let mainStatus = try await self.getMainStatus(for: toStatusId, on: context)
 
         let notificationsService = context.services.notificationsService
         try await notificationsService.create(type: .newComment,
@@ -2396,30 +2396,45 @@ final class StatusesService: StatusesServiceType {
     }
 
     func can(view status: Status, userId: Int64?, on context: ExecutionContext) async throws -> Bool {
-        // These statuses can see all of the people over the internet.
         if [.public, .quietPublic].contains(status.visibility) {
             return true
         }
 
-        // If user is not authorized, theb he cannot see the statuses other then public/followers.
         guard let userId else {
             return false
         }
 
-        // When user is owner of the status.
-        if status.user.id == userId {
+        let statusUserId = try status.user.requireID()
+        if statusUserId == userId {
             return true
         }
 
-        // For mentioned visibility we have to check if user has been connected with status.
-        if try await UserStatus.query(on: context.db)
+        switch status.visibility {
+        case .mentioned:
+            return try await self.isMentioned(userId: userId, in: status, on: context)
+        case .followers:
+            let isFollower = try await Follow.query(on: context.db)
+                .filter(\.$source.$id == userId)
+                .filter(\.$target.$id == statusUserId)
+                .filter(\.$approved == true)
+                .first() != nil
+
+            if isFollower {
+                return true
+            }
+
+            return try await self.isMentioned(userId: userId, in: status, on: context)
+        case .public, .quietPublic:
+            return true
+        }
+    }
+
+    private func isMentioned(userId: Int64, in status: Status, on context: ExecutionContext) async throws -> Bool {
+        return try await UserStatus.query(on: context.db)
             .filter(\.$status.$id == status.requireID())
             .filter(\.$user.$id == userId)
-            .first() != nil {
-            return true
-        }
-
-        return false
+            .filter(\.$userStatusType == .mention)
+            .first() != nil
     }
 
     func getOrginalStatus(id: Int64, on database: Database) async throws -> Status? {
@@ -2460,12 +2475,12 @@ final class StatusesService: StatusesServiceType {
     }
 
     /// Function is returning main status in chain of the comments. When status is already main status then nil is returned.
-    func getMainStatus(for id: Int64?, on database: Database) async throws -> Status? {
+    func getMainStatus(for id: Int64?, on context: ExecutionContext) async throws -> Status? {
         guard let id else {
             return nil
         }
 
-        let ancestors = try await self.ancestors(for: id, on: database)
+        let ancestors = try await self.ancestors(for: id, on: context)
         return ancestors.first
     }
 
@@ -2812,8 +2827,8 @@ final class StatusesService: StatusesServiceType {
         )
     }
 
-    func ancestors(for statusId: Int64, on database: Database) async throws -> [Status] {
-        guard let currentStatus = try await Status.query(on: database)
+    func ancestors(for statusId: Int64, on context: ExecutionContext) async throws -> [Status] {
+        guard let currentStatus = try await Status.query(on: context.db)
             .filter(\.$id == statusId)
             .first() else {
             return []
@@ -2827,7 +2842,7 @@ final class StatusesService: StatusesServiceType {
         var currentReplyToStatusId: Int64? = replyToStatusId
 
         while let currentStatudId = currentReplyToStatusId {
-            if let ancestor = try await self.get(id: currentStatudId, on: database) {
+            if let ancestor = try await self.get(id: currentStatudId, on: context.db) {
                 list.insert(ancestor, at: 0)
                 currentReplyToStatusId = ancestor.$replyToStatus.id
             } else {
@@ -2838,8 +2853,8 @@ final class StatusesService: StatusesServiceType {
         return list
     }
 
-    func descendants(for statusId: Int64, on database: Database) async throws -> [Status] {
-        var statuses = try await Status.query(on: database)
+    func descendants(for statusId: Int64, on context: ExecutionContext) async throws -> [Status] {
+        let directStatuses = try await Status.query(on: context.db)
             .filter(\.$replyToStatus.$id == statusId)
             .with(\.$user)
             .with(\.$attachments) { attachment in
@@ -2859,8 +2874,17 @@ final class StatusesService: StatusesServiceType {
             .sort(\.$createdAt, .ascending)
             .all()
 
-        for status in statuses {
-            let subStatuses = try await descendants(for: status.requireID(), on: database)
+        var statuses: [Status] = []
+        for status in directStatuses {
+            if try await self.can(view: status, userId: context.userId, on: context) {
+                statuses.append(status)
+            }
+        }
+
+        // Traverse every branch, including replies hidden from the requesting user,
+        // because a visible status may be a descendant of a hidden one.
+        for status in directStatuses {
+            let subStatuses = try await descendants(for: status.requireID(), on: context)
             statuses = statuses + subStatuses
         }
 
@@ -3336,7 +3360,7 @@ final class StatusesService: StatusesServiceType {
         var page = 0
 
         // We have to download ancestors when status is comment (in notifications screen we can show main photo which is favourited).
-        let ancestors = try await statusesService.ancestors(for: status.requireID(), on: context.db)
+        let ancestors = try await statusesService.ancestors(for: status.requireID(), on: context)
 
         // We have to iterate by boosts and send update notifications.
         while true {
