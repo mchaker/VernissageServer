@@ -1162,8 +1162,8 @@ struct StatusesController {
             throw request.userId == nil ? Abort(.unauthorized) : EntityForbiddenError.statusForbidden
         }
         
-        let ancestors = try await statusesService.ancestors(for: statusId, on: request.db)
-        let descendants = try await statusesService.descendants(for: statusId, on: request.db)
+        let ancestors = try await statusesService.ancestors(for: statusId, on: request.executionContext)
+        let descendants = try await statusesService.descendants(for: statusId, on: request.executionContext)
         
         let ancestorsDtos = await statusesService.convertToDtos(statuses: ancestors, on: request.executionContext)
         let descendantsDtos = await statusesService.convertToDtos(statuses: descendants, on: request.executionContext)
@@ -1830,7 +1830,7 @@ struct StatusesController {
             try await statusesService.updateFavouritesCount(for: statusId, on: request.db)
             
             // We have to download ancestors when favourited is comment (in notifications screen we can show main photo which is favourited).
-            let ancestors = try await statusesService.ancestors(for: statusId, on: request.db)
+            let ancestors = try await statusesService.ancestors(for: statusId, on: request.executionContext)
             
             // Add new notification (if user is not an author of the status).
             if authorizationPayloadId != statusFromDatabaseBeforeFavourite.user.id {
