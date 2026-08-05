@@ -229,5 +229,6 @@ extension Application {
         self.migrations.add(CameraStatus.CreateCameraStatuses())
         self.migrations.add(LensStatus.CreateLensStatuses())
         self.migrations.add(FilmStatus.CreateFilmStatuses())
+        self.migrations.add(Status.ChangeContentWarningType())
     }
 }
