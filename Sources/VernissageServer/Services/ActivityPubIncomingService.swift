@@ -248,6 +248,11 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
                     continue
                 }
 
+                guard noteDto.type == "Note" else {
+                    context.logger.warning("Object type '\(noteDto.type)' is not supported (status: \(noteDto.id), activity: \(activity.id)).")
+                    continue
+                }
+
                 guard let activityPubProfile = activity.actor.actorIds().first else {
                     context.logger.warning("Cannot find any ActivityPub actor profile id (activity: \(activity.id)).")
                     continue
@@ -909,6 +914,8 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
             return downloadedStatus
         } catch ActivityPubError.missingSupportedImageAttachments {
             // Consume this kind of error (it’s not a real error - statuses without images are simply not supported).
+        } catch ActivityPubError.statusTypeNotSupported {
+            // Consume this kind of error (unsupported ActivityStreams object types are intentionally ignored).
         } catch StatusError.cannotAddCommentWithoutCommentedStatus {
             // Consume this kind of error (it’s not a real error - we cannot create comment to not exists status).
         } catch ActivityPubError.actorIsSuppressedByInstance {
@@ -1265,6 +1272,7 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
                                       activityPubProfile: String,
                                       on context: ExecutionContext) async throws -> Bool {
         guard activity.type == .create,
+              noteDto.type == "Note",
               noteDto.isComment() == false,
               let attachments = noteDto.attachment,
               attachments.isEmpty == false,
