@@ -65,6 +65,7 @@ can be added by the system administrator.
 
 ### Essentials
 
+- <doc:InstallViaTool>
 - <doc:HostVernissageServer>
 - <doc:HostVernissageWeb>
 - <doc:DockerContainers>
