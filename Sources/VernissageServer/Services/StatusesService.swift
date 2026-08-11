@@ -807,13 +807,13 @@ final class StatusesService: StatusesServiceType {
                                                       on: context)
                 }
             } else {
-                // Create status on owner tineline.
-                let ownerUserStatusId = context.application.services.snowflakeService.generate()
-                let ownerUserStatus = try UserStatus(id: ownerUserStatusId, type: .owner, userId: status.user.requireID(), statusId: statusId)
-                try await ownerUserStatus.create(on: context.application.db)
+                let ownerUserId = try status.user.requireID()
+
+                // Create status on owner timeline if it does not exist yet.
+                try await self.createOnUserOwnerTimeline(ownerUserId: ownerUserId, statusId: statusId, on: context)
 
                 // Create statuses on local followers timeline.
-                try await self.createOnLocalTimeline(followersOf: status.user.requireID(), status: status, on: context)
+                try await self.createOnLocalTimeline(followersOf: ownerUserId, status: status, on: context)
                 try await self.createOnLocalTimelineForHashtagsFollowers(status: status, on: context)
 
                 // Create mention notifications.
@@ -902,6 +902,11 @@ final class StatusesService: StatusesServiceType {
             throw Abort(.notFound)
         }
 
+        // Skip outdated jobs when the status has already been unpinned.
+        guard status.pinnedAt != nil else {
+            return
+        }
+
         switch status.visibility {
         case .public, .quietPublic:
             try await self.scheduleCollectionSend(status: status, type: .pin, on: context)
@@ -913,6 +918,11 @@ final class StatusesService: StatusesServiceType {
     func send(unpin statusId: Int64, on context: ExecutionContext) async throws {
         guard let status = try await self.get(id: statusId, on: context.db) else {
             throw Abort(.notFound)
+        }
+
+        // Skip outdated jobs when the status has already been pinned again.
+        guard status.pinnedAt == nil else {
+            return
         }
 
         switch status.visibility {
@@ -3069,6 +3079,21 @@ final class StatusesService: StatusesServiceType {
 
         // We are retutning calculated category or category from database when we cannot calculate new category.
         return calculatedCategory ?? categoryFromDatabase
+    }
+
+    private func createOnUserOwnerTimeline(ownerUserId: Int64, statusId: Int64, on context: ExecutionContext) async throws {
+        let ownerStatusFromDatabase = try await UserStatus.query(on: context.application.db)
+            .filter(\.$user.$id == ownerUserId)
+            .filter(\.$status.$id == statusId)
+            .first()
+
+        guard ownerStatusFromDatabase == nil else {
+            return
+        }
+
+        let ownerUserStatusId = context.application.services.snowflakeService.generate()
+        let ownerUserStatus = UserStatus(id: ownerUserStatusId, type: .owner, userId: ownerUserId, statusId: statusId)
+        try await ownerUserStatus.create(on: context.application.db)
     }
 
     private func getCategory(basedOn hashtags: [String], on database: Database) async throws -> Category? {

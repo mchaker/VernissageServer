@@ -833,7 +833,7 @@ final class UsersService: UsersServiceType {
             do {
                 try await context
                     .queues(.collectionUpdater)
-                    .dispatch(CollectionUpdaterJob.self, user.requireID(), maxRetryCount: 2)
+                    .dispatch(CollectionUpdaterJob.self, user.requireID(), maxRetryCount: 3)
             } catch {
                 context.logger.warning("Cannot dispatch featured collection synchronization for user '\(user.activityPubProfile)'. Error: \(error).")
             }
