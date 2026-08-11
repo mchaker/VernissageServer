@@ -214,7 +214,7 @@ struct WellKnownController {
         let userFromDb = try await usersService.get(account: account, on: request.db)
         
         guard let user = userFromDb else {
-            throw EntityNotFoundError.userNotFound
+            throw WellKnownError.accountNotFound(account)
         }
 
         let applicationSettings = request.application.settings.cached
