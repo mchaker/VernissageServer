@@ -426,6 +426,7 @@ The list below contains definitions of the objects used for communication with V
 - ``UserBlockedDomainError``
 - ``UserSettingError``
 - ``XsrfValidationError``
+- ``WellKnownError``
 
 ### Queue Background Jobs
 
