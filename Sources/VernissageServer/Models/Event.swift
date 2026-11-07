@@ -61,6 +61,8 @@ enum EventType: String, Codable, CaseIterable {
     case usersUnmute
     case usersEnable
     case usersDisable
+    case usersSuppress
+    case usersUnsuppress
     case usersBlock
     case usersUnblock
     case usersSupporter
@@ -117,6 +119,10 @@ enum EventType: String, Codable, CaseIterable {
     case categoriesDelete
     case categoriesEnable
     case categoriesDisable
+
+    case camerasList
+    case lensesList
+    case filmsList
     
     case licensesList
     case licensesCreate
@@ -155,10 +161,16 @@ enum EventType: String, Codable, CaseIterable {
     
     case timelinesPublic
     case timelinesCategories
+    case timelinesCameras
+    case timelinesLenses
+    case timelinesFilms
     case timelinesHashtags
     case timelinesFeaturedStatuses
     case timelinesFeaturedUsers
     case timelinesHome
+
+    case timelineMarkersRead
+    case timelineMarkersUpdate
     
     case hashtagsFollowed
     case hashtagsFollow
@@ -205,6 +217,15 @@ enum EventType: String, Codable, CaseIterable {
     case userBlockedDomainsUpdate
     case userBlockedDomainsDelete
     
+    case directMessagesList
+    case directMessagesUnreadCount
+    case directMessagesRead
+    case directMessagesStatuses
+    case directMessagesCreate
+    case directMessagesReply
+    case directMessagesMarkRead
+    case directMessagesMute
+
     case userMutesList
     
     case pushSubscriptionsList
@@ -261,6 +282,8 @@ enum EventType: String, Codable, CaseIterable {
     
     case articlesList
     case articlesRead
+    case articlesCount
+    case articlesUpdateMarker
     case articlesCreate
     case articlesUpdate
     case articlesDelete

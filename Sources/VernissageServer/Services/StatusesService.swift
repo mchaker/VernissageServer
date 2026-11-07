@@ -123,6 +123,18 @@ protocol StatusesServiceType: Sendable {
     /// - Throws: An error if the operation fails.
     func note(basedOn status: Status, replyToStatus: Status?, on context: ExecutionContext) async throws -> NoteDto
 
+    /// Converts a status into an activity exposed in its owner's public ActivityPub outbox.
+    ///
+    /// Regular statuses are represented as `Create` activities and reblogs as `Announce` activities.
+    /// The status and relations required by the generated activity must be eager-loaded.
+    ///
+    /// - Parameters:
+    ///   - status: Status to convert.
+    ///   - context: Execution context used while creating an embedded ActivityPub note.
+    /// - Returns: ActivityPub object representing the outbox activity.
+    /// - Throws: An error if the status cannot be converted.
+    func outboxActivity(for status: Status, on context: ExecutionContext) async throws -> ObjectDto
+
     /// Updates the status count and related counters for a user.
     ///
     /// - Parameters:
@@ -194,6 +206,19 @@ protocol StatusesServiceType: Sendable {
     ///   - context: The execution context for database and services.
     /// - Throws: An error if sending fails.
     func send(unfavourite statusFavouriteDto: StatusUnfavouriteJobDto, on context: ExecutionContext) async throws
+
+    /// Downloads supported image attachments for an incoming direct message, without timelines or notifications.
+    ///
+    /// The caller connects these detached attachments while atomically storing the message and its audience.
+    /// Unsupported media are skipped; a note without supported attachments returns an empty array.
+    ///
+    /// - Parameters:
+    ///   - note: The ActivityPub note containing attachment URLs and media metadata.
+    ///   - userId: The message author's identifier, assigned as the owner of the downloaded attachments.
+    ///   - context: The execution context providing access to the database, storage and media services.
+    /// - Returns: Saved attachments not yet connected to a status, ordered as in the note's attachment list.
+    /// - Throws: An error if downloading, processing or saving an attachment fails.
+    func downloadDirectMessageAttachments(note: NoteDto, userId: Int64, on context: ExecutionContext) async throws -> [Attachment]
 
     /// Creates a new status based on a NoteDto.
     ///
@@ -337,10 +362,10 @@ protocol StatusesServiceType: Sendable {
     ///
     /// - Parameters:
     ///   - id: The status identifier.
-    ///   - database: The database to query against.
+    ///   - context: The execution context for database and services.
     /// - Returns: The main ``Status`` if found; otherwise nil.
     /// - Throws: An error if the database query fails.
-    func getMainStatus(for: Int64?, on database: Database) async throws -> Status?
+    func getMainStatus(for: Int64?, on context: ExecutionContext) async throws -> Status?
 
     /// Deletes all statuses owned by a user.
     ///
@@ -354,9 +379,9 @@ protocol StatusesServiceType: Sendable {
     ///
     /// - Parameters:
     ///   - statusId: The internal identifier of the status to delete.
-    ///   - database: The database to delete from.
+    ///   - context: The execution context for database and services.
     /// - Throws: An error if deletion fails.
-    func delete(id statusId: Int64, on database: Database) async throws
+    func delete(id statusId: Int64, on context: ExecutionContext) async throws
 
     /// Updates the reblogs count for the given status.
     ///
@@ -391,6 +416,29 @@ protocol StatusesServiceType: Sendable {
     /// - Returns: A paginated result of statuses.
     /// - Throws: An error if the query fails.
     func statuses(for userId: Int64, linkableParams: LinkableParams, on context: ExecutionContext) async throws -> LinkableResult<Status>
+
+    /// Counts public activities exposed in a local actor's ActivityPub outbox.
+    ///
+    /// - Parameters:
+    ///   - userId: Local actor identifier.
+    ///   - database: Database to query.
+    /// - Returns: Number of public, locally-created statuses in the outbox.
+    /// - Throws: A database error.
+    func countOutbox(userId: Int64, on database: Database) async throws -> Int
+
+    /// Retrieves public activities exposed in a local actor's ActivityPub outbox.
+    ///
+    /// Results are ordered by their immutable Snowflake identifier in reverse chronological order.
+    /// One extra item may be requested by the caller to determine whether another cursor page exists.
+    ///
+    /// - Parameters:
+    ///   - userId: Local actor identifier.
+    ///   - maxId: Optional exclusive upper cursor.
+    ///   - limit: Maximum number of statuses to return.
+    ///   - database: Database to query.
+    /// - Returns: Public, locally-created statuses with relations required for ActivityPub serialization.
+    /// - Throws: A database error.
+    func outbox(userId: Int64, maxId: Int64?, limit: Int, on database: Database) async throws -> [Status]
 
     /// Retrieves paginated statuses pinned by the given user for ActivityPub `featured` collection.
     ///
@@ -431,19 +479,19 @@ protocol StatusesServiceType: Sendable {
     ///
     /// - Parameters:
     ///   - statusId: The status identifier.
-    ///   - database: The database to query.
+    ///   - context: The execution context for database and services.
     /// - Returns: An array of ancestor statuses.
     /// - Throws: An error if the query fails.
-    func ancestors(for statusId: Int64, on database: Database) async throws -> [Status]
+    func ancestors(for statusId: Int64, on context: ExecutionContext) async throws -> [Status]
 
     /// Retrieves descendant statuses in a comment chain.
     ///
     /// - Parameters:
     ///   - statusId: The status identifier.
-    ///   - database: The database to query.
+    ///   - context: The execution context for database and services.
     /// - Returns: An array of descendant statuses.
     /// - Throws: An error if the query fails.
-    func descendants(for statusId: Int64, on database: Database) async throws -> [Status]
+    func descendants(for statusId: Int64, on context: ExecutionContext) async throws -> [Status]
 
     /// Retrieves a paginated list of users who have reblogged the specified status.
     ///
@@ -585,6 +633,51 @@ final class StatusesService: StatusesServiceType {
         return try await Status.query(on: database).filter(\.$user.$id == userId).count()
     }
 
+    func countOutbox(userId: Int64, on database: Database) async throws -> Int {
+        return try await self.outboxBaseQuery(userId: userId, on: database).count()
+    }
+
+    func outbox(userId: Int64, maxId: Int64?, limit: Int, on database: Database) async throws -> [Status] {
+        var query = self.outboxBaseQuery(userId: userId, on: database)
+
+        if let maxId {
+            query = query.filter(\.$id < maxId)
+        }
+
+        return try await query
+            .sort(\.$id, .descending)
+            .limit(limit)
+            .with(\.$attachments) { attachment in
+                attachment.with(\.$originalFile)
+                attachment.with(\.$smallFile)
+                attachment.with(\.$originalHdrFile)
+                attachment.with(\.$exif)
+                attachment.with(\.$license)
+                attachment.with(\.$location) { location in
+                    location.with(\.$country)
+                }
+            }
+            .with(\.$hashtags)
+            .with(\.$mentions)
+            .with(\.$emojis)
+            .with(\.$category)
+            .with(\.$user)
+            .with(\.$replyToStatus) { replyToStatus in
+                replyToStatus.with(\.$user)
+            }
+            .with(\.$reblog) { reblog in
+                reblog.with(\.$user)
+            }
+            .all()
+    }
+
+    private func outboxBaseQuery(userId: Int64, on database: Database) -> QueryBuilder<Status> {
+        return Status.query(on: database)
+            .filter(\.$user.$id == userId)
+            .filter(\.$isLocal == true)
+            .filter(\.$visibility ~~ [.public, .quietPublic])
+    }
+
     func count(onlyComments: Bool, on database: Database) async throws -> Int {
         var query = Status.query(on: database)
             .filter(\.$reblog.$id == nil)
@@ -711,10 +804,27 @@ final class StatusesService: StatusesServiceType {
             []
         }
 
-        let tags = hashtags + mentions + categories
+        var tags = hashtags + mentions + categories
+        let cc: ComplexType<ActorDto>
+        let to: ComplexType<ActorDto>
 
-        let cc = self.createCc(status: status, replyToStatus: replyToStatus)
-        let to = self.createTo(status: status, replyToStatus: replyToStatus)
+        if status.$directConversation.id != nil {
+            // Explicit message recipients are authoritative. Never inherit a parent's audience or followers.
+            let recipients = try await StatusRecipient.query(on: context.db)
+                .filter(\.$status.$id == status.requireID())
+                .with(\.$user)
+                .sort(\.$id)
+                .all()
+            to = .multiple(recipients.filter { $0.recipientType == .to }.map { ActorDto(id: $0.user.activityPubProfile) })
+            cc = .multiple(recipients.filter { $0.recipientType == .cc }.map { ActorDto(id: $0.user.activityPubProfile) })
+
+            for recipient in recipients where tags.contains(where: { $0.href == recipient.user.activityPubProfile }) == false {
+                tags.append(NoteTagDto(userName: recipient.user.account, activityPubProfile: recipient.user.activityPubProfile))
+            }
+        } else {
+            cc = self.createCc(status: status, replyToStatus: replyToStatus)
+            to = self.createTo(status: status, replyToStatus: replyToStatus)
+        }
 
         // Sort and map attachments connected with status.
         let attachmentDtos = status.attachments.sorted().map({ MediaAttachmentDto(from: $0, baseImagesPath: baseImagesPath) })
@@ -726,7 +836,7 @@ final class StatusesService: StatusesServiceType {
 
         let noteDto = NoteDto(id: status.activityPubId,
                               summary: status.contentWarning,
-                              inReplyTo: replyToStatus?.activityPubId,
+                              inReplyTo: replyToStatus?.activityPubId ?? status.replyToActivityPubId,
                               published: published,
                               updated: updated,
                               url: status.activityPubUrl,
@@ -742,6 +852,42 @@ final class StatusesService: StatusesServiceType {
                               tag: .multiple(tags))
 
         return noteDto
+    }
+
+    func outboxActivity(for status: Status, on context: ExecutionContext) async throws -> ObjectDto {
+        let actor = status.user
+
+        if let reblog = status.reblog {
+            let activity = ActivityDto(context: .single(ContextDto(value: "https://www.w3.org/ns/activitystreams")),
+                                       type: .announce,
+                                       id: "\(status.activityPubId)/activity",
+                                       actor: .single(ActorDto(id: actor.activityPubProfile)),
+                                       to: .single(ActorDto(id: "https://www.w3.org/ns/activitystreams#Public")),
+                                       cc: .multiple([
+                                           ActorDto(id: reblog.user.activityPubProfile),
+                                           ActorDto(id: "\(actor.activityPubProfile)/followers")
+                                       ]),
+                                       object: .single(ObjectDto(id: reblog.activityPubId)),
+                                       summary: nil,
+                                       signature: nil,
+                                       published: status.createdAt?.toISO8601String())
+            return ObjectDto(id: activity.id, type: .announce, object: activity)
+        }
+
+        let note = try await self.note(basedOn: status,
+                                       replyToStatus: status.replyToStatus,
+                                       on: context)
+        let activity = ActivityDto(context: .single(ContextDto(value: "https://www.w3.org/ns/activitystreams")),
+                                   type: .create,
+                                   id: "\(note.id)/activity",
+                                   actor: .single(ActorDto(id: actor.activityPubProfile)),
+                                   to: note.to,
+                                   cc: note.cc,
+                                   object: .single(ObjectDto(id: note.id, type: .note, object: note)),
+                                   summary: nil,
+                                   signature: nil,
+                                   published: note.published)
+        return ObjectDto(id: activity.id, type: .create, object: activity)
     }
 
     func updateStatusCount(for userId: Int64, on database: Database) async throws {
@@ -769,6 +915,11 @@ final class StatusesService: StatusesServiceType {
             throw Abort(.notFound)
         }
 
+        // DirectMessagesService already saves its private delivery event and notifications atomically.
+        guard status.$directConversation.id == nil else {
+            return
+        }
+
         // When status is response for other status (comment) we are sending the notification to parent status owner.
         let replyToStatusId = status.$replyToStatus.id
         if let replyToStatusId {
@@ -784,7 +935,7 @@ final class StatusesService: StatusesServiceType {
                 }
 
                 // We have to get first status in the tree.
-                let mainStatus = try await self.getMainStatus(for: replyToStatusId, on: context.application.db)
+                let mainStatus = try await self.getMainStatus(for: replyToStatusId, on: context)
                 let firstStatus = mainStatus ?? commentedStatus
 
                 if firstStatus.isLocal {
@@ -807,13 +958,13 @@ final class StatusesService: StatusesServiceType {
                                                       on: context)
                 }
             } else {
-                // Create status on owner tineline.
-                let ownerUserStatusId = context.application.services.snowflakeService.generate()
-                let ownerUserStatus = try UserStatus(id: ownerUserStatusId, type: .owner, userId: status.user.requireID(), statusId: statusId)
-                try await ownerUserStatus.create(on: context.application.db)
+                let ownerUserId = try status.user.requireID()
+
+                // Create status on owner timeline if it does not exist yet.
+                try await self.createOnUserOwnerTimeline(ownerUserId: ownerUserId, statusId: statusId, on: context)
 
                 // Create statuses on local followers timeline.
-                try await self.createOnLocalTimeline(followersOf: status.user.requireID(), status: status, on: context)
+                try await self.createOnLocalTimeline(followersOf: ownerUserId, status: status, on: context)
                 try await self.createOnLocalTimelineForHashtagsFollowers(status: status, on: context)
 
                 // Create mention notifications.
@@ -902,6 +1053,11 @@ final class StatusesService: StatusesServiceType {
             throw Abort(.notFound)
         }
 
+        // Skip outdated jobs when the status has already been unpinned.
+        guard status.pinnedAt != nil else {
+            return
+        }
+
         switch status.visibility {
         case .public, .quietPublic:
             try await self.scheduleCollectionSend(status: status, type: .pin, on: context)
@@ -913,6 +1069,11 @@ final class StatusesService: StatusesServiceType {
     func send(unpin statusId: Int64, on context: ExecutionContext) async throws {
         guard let status = try await self.get(id: statusId, on: context.db) else {
             throw Abort(.notFound)
+        }
+
+        // Skip outdated jobs when the status has already been pinned again.
+        guard status.pinnedAt == nil else {
+            return
         }
 
         switch status.visibility {
@@ -941,7 +1102,9 @@ final class StatusesService: StatusesServiceType {
             // Create favourite statuses on remote servers.
             try await self.scheduleFavouriteSend(statusFavourite: statusFavourite, on: context)
         case .mentioned:
-            break
+            if statusFavourite.status.$directConversation.id != nil {
+                try await self.scheduleFavouriteSend(statusFavourite: statusFavourite, on: context)
+            }
         }
     }
 
@@ -968,8 +1131,24 @@ final class StatusesService: StatusesServiceType {
             // Create favourite statuses on remote servers.
             try await self.scheduleUnfavouriteSend(statusFavouriteId: statusFavouriteDto.statusFavouriteId, user: user, status: status, on: context)
         case .mentioned:
-            break
+
+            if status.$directConversation.id != nil {
+                try await self.scheduleUnfavouriteSend(statusFavouriteId: statusFavouriteDto.statusFavouriteId,
+                                                      user: user, status: status, on: context)
+            }
         }
+    }
+
+    public func downloadDirectMessageAttachments(note: NoteDto, userId: Int64, on context: ExecutionContext) async throws -> [Attachment] {
+        var attachments: [Attachment] = []
+
+        for (index, media) in (note.attachment ?? []).enumerated() {
+            if let attachment = try await saveAttachment(attachment: media, userId: userId, order: index, on: context) {
+                attachments.append(attachment)
+            }
+        }
+
+        return attachments
     }
 
     func create(basedOn noteDto: NoteDto, userId: Int64, visibility: StatusVisibility, on context: ExecutionContext) async throws -> Status {
@@ -984,7 +1163,9 @@ final class StatusesService: StatusesServiceType {
         var replyToStatus: Status? = nil
         if let replyToActivityPubId = noteDto.inReplyTo {
             context.logger.info("Downloading commented status '\(replyToActivityPubId)' from local database.")
-            replyToStatus = try await self.get(activityPubId: replyToActivityPubId, on: context.application.db)
+            if let parent = try await self.get(activityPubId: replyToActivityPubId, on: context.db) {
+                replyToStatus = try await self.getOrginalStatus(id: parent.requireID(), on: context.db)
+            }
 
             if replyToStatus == nil {
                 context.logger.info("Status '\(replyToActivityPubId)' cannot found in local database. Adding comment has been terminated.")
@@ -1010,9 +1191,10 @@ final class StatusesService: StatusesServiceType {
         let downloadedEmojis = try await self.downloadEmojis(emojis: emojis, on: context)
 
         // We can save also main status when we are adding new comment.
-        let mainStatus = try await self.getMainStatus(for: replyToStatus?.id, on: context.db)
+        let mainStatus = try await self.getMainStatus(for: replyToStatus?.id, on: context)
 
-        let category = try await self.getCategory(basedOn: hashtags, and: categories, on: context.application.db)
+        let category = try await self.getCategory(basedOn: hashtags, and: categories, on: context)
+        let exifService = context.services.exifService
         let newStatusId = context.application.services.snowflakeService.generate()
 
         let status = Status(id: newStatusId,
@@ -1054,6 +1236,16 @@ final class StatusesService: StatusesServiceType {
                     attachment.$status.id = status.id
                     try await attachment.save(on: database)
                 }
+
+                // Update cemera/lens/film timelines metadata.
+                try await exifService.synchronize(
+                    statusId: status.requireID(),
+                    previousAttachments: [],
+                    attachments: attachmentsFromDatabase,
+                    previousVisibility: nil,
+                    visibility: status.visibility,
+                    on: context.with(transaction: database)
+                )
 
                 // Create hashtags based on note.
                 for statusHashtag in statusHashtags {
@@ -1111,6 +1303,17 @@ final class StatusesService: StatusesServiceType {
 
     func create(basedOn statusRequestDto: StatusRequestDto, user: User, on request: Request) async throws -> Status {
         let userId = try user.requireID()
+        let replyToStatusId: Int64?
+
+        // Replies always belong to the original status, even if a client sends a boost ID.
+        if let parentId = statusRequestDto.replyToStatusId?.toId() {
+            guard let parent = try await self.getOrginalStatus(id: parentId, on: request.db) else {
+                throw EntityNotFoundError.statusNotFound
+            }
+            replyToStatusId = try parent.requireID()
+        } else {
+            replyToStatusId = nil
+        }
 
         // Verify attachments ids.
         var attachments: [Attachment] = []
@@ -1141,11 +1344,12 @@ final class StatusesService: StatusesServiceType {
 
         // We can save also main status when we are adding new comment.
         let statusesService = request.application.services.statusesService
-        let mainStatus = try await statusesService.getMainStatus(for: statusRequestDto.replyToStatusId?.toId(), on: request.db)
+        let mainStatus = try await statusesService.getMainStatus(for: replyToStatusId, on: request.executionContext)
 
         let baseAddress = request.application.settings.cached?.baseAddress ?? ""
         let attachmentsFromDatabase = attachments
         let statusId = request.application.services.snowflakeService.generate()
+        let exifService = request.application.services.exifService
 
         let status = Status(id: statusId,
                             isLocal: true,
@@ -1159,8 +1363,8 @@ final class StatusesService: StatusesServiceType {
                             sensitive: statusRequestDto.sensitive,
                             contentWarning: statusRequestDto.contentWarning,
                             commentsDisabled: statusRequestDto.commentsDisabled,
-                            replyToStatusId: statusRequestDto.replyToStatusId?.toId(),
-                            mainReplyToStatusId: mainStatus?.id ?? statusRequestDto.replyToStatusId?.toId(),
+                            replyToStatusId: replyToStatusId,
+                            mainReplyToStatusId: mainStatus?.id ?? replyToStatusId,
                             publishedAt: Date())
 
         let statusMentions = try await statusesService.getStatusMentions(statusId: status.requireID(), note: status.note, on: request.executionContext)
@@ -1177,6 +1381,16 @@ final class StatusesService: StatusesServiceType {
                 try await attachment.save(on: database)
             }
 
+            // Update cemera/lens/film timelines metadata.
+            try await exifService.synchronize(
+                statusId: status.requireID(),
+                previousAttachments: [],
+                attachments: attachmentsFromDatabase,
+                previousVisibility: nil,
+                visibility: status.visibility,
+                on: request.executionContext.with(transaction: database)
+            )
+
             for statusHashtag in statusHashtags {
                 try await statusHashtag.save(on: database)
             }
@@ -1189,7 +1403,7 @@ final class StatusesService: StatusesServiceType {
             try await request.application.services.statusesService.updateStatusCount(for: userId, on: database)
 
             // We have to update number of statuses replies.
-            if let replyToStatusId = statusRequestDto.replyToStatusId?.toId() {
+            if let replyToStatusId {
                 try await request.application.services.statusesService.updateRepliesCount(for: replyToStatusId, on: database)
             }
         }
@@ -1242,7 +1456,7 @@ final class StatusesService: StatusesServiceType {
 
         let statusHashtags = try await getStatusHashtags(status: status, hashtags: hashtags, on: context)
         let statusMentions = try await getStatusMentions(status: status, userNames: userNames, on: context)
-        let category = try await self.getCategory(basedOn: hashtags, and: categories, on: context.application.db)
+        let category = try await self.getCategory(basedOn: hashtags, and: categories, on: context)
 
         context.logger.info("Downloading emojis (count: \(emojis.count)) for status '\(noteDto.id)' to application storage.")
         let downloadedEmojis = try await self.downloadEmojis(emojis: emojis, on: context)
@@ -1258,7 +1472,10 @@ final class StatusesService: StatusesServiceType {
 
         context.logger.info("Saving status '\(noteDto.id)' in the database (with history).")
         let exifHistoriesToSave = exifHistories
+        let previousAttachmentsFromDatabase = status.attachments
         let attachmentsFromDatabase = savedAttachments
+        let previousVisibility = status.visibility
+        let exifService = context.services.exifService
 
         try await context.application.db.transaction { database in
             // Save status history in database.
@@ -1310,6 +1527,16 @@ final class StatusesService: StatusesServiceType {
                 attachment.$status.id = status.id
                 try await attachment.save(on: database)
             }
+
+            // Update cemera/lens/film timelines metadata.
+            try await exifService.synchronize(
+                statusId: status.requireID(),
+                previousAttachments: previousAttachmentsFromDatabase,
+                attachments: attachmentsFromDatabase,
+                previousVisibility: previousVisibility,
+                visibility: status.visibility,
+                on: context.with(transaction: database)
+            )
 
             // Synchronize hashtags by diff to avoid unnecessary deletes/inserts.
             let hashtagsByNormalized = Dictionary(uniqueKeysWithValues: statusHashtags.map { ($0.hashtagNormalized, $0) })
@@ -1444,7 +1671,10 @@ final class StatusesService: StatusesServiceType {
 
         request.logger.info("Saving status '\(status.stringId() ?? "")' in the database (with history).")
         let exifHistoriesToSave = exifHistories
+        let previousAttachmentsFromDatabase = status.attachments
         let attachmentsFromDatabase = attachments
+        let previousVisibility = status.visibility
+        let exifService = request.application.services.exifService
 
         try await request.db.transaction { database in
             // Save status history in database.
@@ -1498,6 +1728,16 @@ final class StatusesService: StatusesServiceType {
 
                 try await attachment.save(on: database)
             }
+
+            // Update cemera/lens/film timelines metadata.
+            try await exifService.synchronize(
+                statusId: status.requireID(),
+                previousAttachments: previousAttachmentsFromDatabase,
+                attachments: attachmentsFromDatabase,
+                previousVisibility: previousVisibility,
+                visibility: status.visibility,
+                on: request.executionContext.with(transaction: database)
+            )
 
             // Delete old hashtags.
             try await status.hashtags.delete(on: database)
@@ -1860,7 +2100,7 @@ final class StatusesService: StatusesServiceType {
             return
         }
 
-        let mainStatus = try await self.getMainStatus(for: toStatusId, on: context.db)
+        let mainStatus = try await self.getMainStatus(for: toStatusId, on: context)
 
         let notificationsService = context.services.notificationsService
         try await notificationsService.create(type: .newComment,
@@ -1897,8 +2137,22 @@ final class StatusesService: StatusesServiceType {
     }
 
     private func scheduleFavouriteSend(statusFavourite: StatusFavourite, on context: ExecutionContext) async throws {
-        let inbox = statusFavourite.status.user.sharedInbox ?? statusFavourite.status.user.userInbox
+        let isDirectMessage = statusFavourite.status.$directConversation.id != nil
+
+        if isDirectMessage {
+            guard statusFavourite.user.isLocal, statusFavourite.status.user.isLocal == false,
+                  try await self.can(view: statusFavourite.status, userId: statusFavourite.$user.id, on: context) else {
+                return
+            }
+        }
+
+        let inbox = isDirectMessage ? statusFavourite.status.user.userInbox
+            : (statusFavourite.status.user.sharedInbox ?? statusFavourite.status.user.userInbox)
         guard let inbox else {
+            if isDirectMessage {
+                throw DirectMessageError.recipientUnavailable
+            }
+
             context.logger.warning("Favourite: '\(statusFavourite.stringId() ?? "")' cannot be send to inbox. Missing shared and user inboxes.")
             return
         }
@@ -1933,12 +2187,25 @@ final class StatusesService: StatusesServiceType {
         // Dispatch new queue which will send real network requests to calculated inboxes.
         try await context
             .queues(.apStatus)
-            .dispatch(ActivityPubStatusJob.self, eventContext)
+            .dispatch(ActivityPubStatusJob.self, eventContext, maxRetryCount: isDirectMessage ? 3 : 0)
     }
 
     private func scheduleUnfavouriteSend(statusFavouriteId: String, user: User, status: Status, on context: ExecutionContext) async throws {
-        let inbox = status.user.sharedInbox ?? status.user.userInbox
+        let isDirectMessage = status.$directConversation.id != nil
+
+        if isDirectMessage {
+            guard user.isLocal, status.user.isLocal == false,
+                  try await self.can(view: status, userId: user.requireID(), on: context) else {
+                return
+            }
+        }
+
+        let inbox = isDirectMessage ? status.user.userInbox : (status.user.sharedInbox ?? status.user.userInbox)
         guard let inbox else {
+            if isDirectMessage {
+                throw DirectMessageError.recipientUnavailable
+            }
+
             context.logger.warning("Unfavourite: '\(statusFavouriteId)' cannot be send to inbox. Missing shared and user inboxes.")
             return
         }
@@ -1972,7 +2239,7 @@ final class StatusesService: StatusesServiceType {
         // Dispatch new queue which will send real network requests to calculated inboxes.
         try await context
             .queues(.apStatus)
-            .dispatch(ActivityPubStatusJob.self, eventContext)
+            .dispatch(ActivityPubStatusJob.self, eventContext, maxRetryCount: isDirectMessage ? 3 : 0)
     }
 
     private func scheduleStatusSend(status: Status,
@@ -2348,30 +2615,52 @@ final class StatusesService: StatusesServiceType {
     }
 
     func can(view status: Status, userId: Int64?, on context: ExecutionContext) async throws -> Bool {
-        // These statuses can see all of the people over the internet.
         if [.public, .quietPublic].contains(status.visibility) {
             return true
         }
 
-        // If user is not authorized, theb he cannot see the statuses other then public/followers.
         guard let userId else {
             return false
         }
 
-        // When user is owner of the status.
-        if status.user.id == userId {
+        let statusUserId = try status.user.requireID()
+        if statusUserId == userId {
             return true
         }
 
-        // For mentioned visibility we have to check if user has been connected with status.
-        if try await UserStatus.query(on: context.db)
+        switch status.visibility {
+        case .mentioned:
+            if status.$directConversation.id != nil {
+                return try await StatusRecipient.query(on: context.db)
+                    .filter(\.$status.$id == status.requireID())
+                    .filter(\.$user.$id == userId)
+                    .first() != nil
+            }
+
+            return try await self.isMentioned(userId: userId, in: status, on: context)
+        case .followers:
+            let isFollower = try await Follow.query(on: context.db)
+                .filter(\.$source.$id == userId)
+                .filter(\.$target.$id == statusUserId)
+                .filter(\.$approved == true)
+                .first() != nil
+
+            if isFollower {
+                return true
+            }
+
+            return try await self.isMentioned(userId: userId, in: status, on: context)
+        case .public, .quietPublic:
+            return true
+        }
+    }
+
+    private func isMentioned(userId: Int64, in status: Status, on context: ExecutionContext) async throws -> Bool {
+        return try await UserStatus.query(on: context.db)
             .filter(\.$status.$id == status.requireID())
             .filter(\.$user.$id == userId)
-            .first() != nil {
-            return true
-        }
-
-        return false
+            .filter(\.$userStatusType == .mention)
+            .first() != nil
     }
 
     func getOrginalStatus(id: Int64, on database: Database) async throws -> Status? {
@@ -2398,9 +2687,13 @@ final class StatusesService: StatusesServiceType {
             return try await self.get(id: status.requireID(), on: database)
         }
 
-        // If not we have to get status which reblogs status by the user.
+        // The request may identify another user's boost of the same original status.
+        guard let original = try await self.getOrginalStatus(id: id, on: database) else {
+            return nil
+        }
+
         let reblog = try await Status.query(on: database)
-            .filter(\.$reblog.$id == id)
+            .filter(\.$reblog.$id == original.requireID())
             .filter(\.$user.$id == userId)
             .first()
 
@@ -2412,12 +2705,12 @@ final class StatusesService: StatusesServiceType {
     }
 
     /// Function is returning main status in chain of the comments. When status is already main status then nil is returned.
-    func getMainStatus(for id: Int64?, on database: Database) async throws -> Status? {
+    func getMainStatus(for id: Int64?, on context: ExecutionContext) async throws -> Status? {
         guard let id else {
             return nil
         }
 
-        let ancestors = try await self.ancestors(for: id, on: database)
+        let ancestors = try await self.ancestors(for: id, on: context)
         return ancestors.first
     }
 
@@ -2466,7 +2759,7 @@ final class StatusesService: StatusesServiceType {
         var errorOccurred = false
         for status in statuses {
             do {
-                try await self.delete(id: status.requireID(), on: context.db)
+                try await self.delete(id: status.requireID(), on: context)
             } catch {
                 errorOccurred = true
                 await context.logger.store("Failed to delete status: '\(status.stringId() ?? "<unkown>")'.", error, on: context.application)
@@ -2478,7 +2771,8 @@ final class StatusesService: StatusesServiceType {
         }
     }
 
-    func delete(id statusId: Int64, on database: Database) async throws {
+    func delete(id statusId: Int64, on context: ExecutionContext) async throws {
+        let database = context.db
         let status = try await Status.query(on: database)
             .filter(\.$id == statusId)
             .with(\.$attachments) { attachment in
@@ -2501,7 +2795,7 @@ final class StatusesService: StatusesServiceType {
             .filter(\.$reblog.$id == statusId)
             .all()
 
-        // We have to delete all replies for this status.
+        // Public threads are removed recursively; direct-message replies remain in the conversation.
         let replies = try await Status.query(on: database)
             .filter(\.$replyToStatus.$id == statusId)
             .all()
@@ -2537,6 +2831,11 @@ final class StatusesService: StatusesServiceType {
 
         // We have to delete from trending statuses.
         let statusTrending = try await TrendingStatus.query(on: database)
+            .filter(\.$status.$id == statusId)
+            .all()
+
+        // We have to delete all timeline markers which point to this status.
+        let timelineMarkers = try await TimelineMarker.query(on: database)
             .filter(\.$status.$id == statusId)
             .all()
 
@@ -2585,6 +2884,15 @@ final class StatusesService: StatusesServiceType {
         let statusActivityPubEventIds = try statusActivityPubEvents.map { try $0.requireID() }
 
         try await database.transaction { transaction in
+            let transactionContext = context.with(transaction: transaction)
+
+            if let conversationId = status.$directConversation.id {
+                try await context.services.directMessagesService.preserveDeletedMessage(
+                    status: status,
+                    conversationId: conversationId,
+                    on: transactionContext)
+            }
+
             // Delete all status ActivityPub event items connected with event connected with status.
             try await StatusActivityPubEventItem.query(on: transaction)
                 .filter(\.$statusActivityPubEvent.$id ~~ statusActivityPubEventIds)
@@ -2607,6 +2915,16 @@ final class StatusesService: StatusesServiceType {
             // We deleted all histories children, now we can delete status histories.
             try await statusHistories.delete(on: transaction)
 
+            // Update camera/lens/film relationships and amounts before disconnecting attachments.
+            try await context.services.exifService.synchronize(
+                statusId: status.requireID(),
+                previousAttachments: status.attachments,
+                attachments: [],
+                previousVisibility: status.visibility,
+                visibility: nil,
+                on: transactionContext
+            )
+
             // We are disconnecting attachment from the status. Attachment and files will be deleted by ClearAttachmentsJob.
             for attachment in status.attachments {
                 attachment.$status.id = nil
@@ -2614,11 +2932,37 @@ final class StatusesService: StatusesServiceType {
             }
 
             try await reblogs.asyncForEach { reblog in
-                try await self.delete(id: reblog.requireID(), on: transaction)
+                try await self.delete(id: reblog.requireID(), on: transactionContext)
             }
 
-            try await replies.asyncForEach { reply in
-                try await self.delete(id: reply.requireID(), on: transaction)
+            if status.$directConversation.id != nil {
+                // Read replies after taking the conversation lock, including replies committed during deletion setup.
+                let directReplies = try await Status.query(on: transaction)
+                    .filter(\.$replyToStatus.$id == statusId)
+                    .all()
+
+                // Keep the remote parent reference, while removing the foreign key to the deleted status.
+                for reply in directReplies {
+                    reply.replyToActivityPubId = status.activityPubId
+                    reply.$replyToStatus.id = nil
+                    try await reply.save(on: transaction)
+                }
+
+                // Edited replies retain their own parent foreign keys in history, even after the live reply is detached.
+                // Preserve those versions, clearing only references to the message being deleted.
+                try await StatusHistory.query(on: transaction)
+                    .filter(\.$replyToStatus.$id == statusId)
+                    .set(\.$replyToStatus.$id, to: nil)
+                    .update()
+
+                try await StatusHistory.query(on: transaction)
+                    .filter(\.$mainReplyToStatus.$id == statusId)
+                    .set(\.$mainReplyToStatus.$id, to: nil)
+                    .update()
+            } else {
+                try await replies.asyncForEach { reply in
+                    try await self.delete(id: reply.requireID(), on: transactionContext)
+                }
             }
 
             try await statusTimelines.delete(on: transaction)
@@ -2627,6 +2971,7 @@ final class StatusesService: StatusesServiceType {
             try await statusBookmarks.delete(on: transaction)
             try await statusFavourites.delete(on: transaction)
             try await statusTrending.delete(on: transaction)
+            try await timelineMarkers.delete(on: transaction)
 
             try await notificationMarkers.delete(on: transaction)
             try await notifications.delete(on: transaction)
@@ -2745,8 +3090,8 @@ final class StatusesService: StatusesServiceType {
         )
     }
 
-    func ancestors(for statusId: Int64, on database: Database) async throws -> [Status] {
-        guard let currentStatus = try await Status.query(on: database)
+    func ancestors(for statusId: Int64, on context: ExecutionContext) async throws -> [Status] {
+        guard let currentStatus = try await Status.query(on: context.db)
             .filter(\.$id == statusId)
             .first() else {
             return []
@@ -2756,12 +3101,25 @@ final class StatusesService: StatusesServiceType {
             return []
         }
 
-        var list: [Status] = [];
+        var list: [Status] = []
+        var visitedIds: Set<Int64> = [statusId]
         var currentReplyToStatusId: Int64? = replyToStatusId
 
-        while let currentStatudId = currentReplyToStatusId {
-            if let ancestor = try await self.get(id: currentStatudId, on: database) {
-                list.insert(ancestor, at: 0)
+        while let currentStatusId = currentReplyToStatusId {
+            // Corrupt or federated parent links must not make context traversal loop forever.
+            guard visitedIds.insert(currentStatusId).inserted else {
+                break
+            }
+
+            if let ancestor = try await self.get(id: currentStatusId, on: context.db) {
+                // Direct-message ancestors may have a different audience from the requested reply.
+                let isVisible = ancestor.$directConversation.id == nil ? true : try await self.can(view: ancestor,
+                                                                                                   userId: context.userId,
+                                                                                                   on: context)
+
+                if isVisible {
+                    list.insert(ancestor, at: 0)
+                }
                 currentReplyToStatusId = ancestor.$replyToStatus.id
             } else {
                 currentReplyToStatusId = nil
@@ -2771,33 +3129,10 @@ final class StatusesService: StatusesServiceType {
         return list
     }
 
-    func descendants(for statusId: Int64, on database: Database) async throws -> [Status] {
-        var statuses = try await Status.query(on: database)
-            .filter(\.$replyToStatus.$id == statusId)
-            .with(\.$user)
-            .with(\.$attachments) { attachment in
-                attachment.with(\.$originalFile)
-                attachment.with(\.$smallFile)
-                attachment.with(\.$originalHdrFile)
-                attachment.with(\.$exif)
-                attachment.with(\.$license)
-                attachment.with(\.$location) { location in
-                    location.with(\.$country)
-                }
-            }
-            .with(\.$hashtags)
-            .with(\.$mentions)
-            .with(\.$category)
-            .with(\.$user)
-            .sort(\.$createdAt, .ascending)
-            .all()
+    func descendants(for statusId: Int64, on context: ExecutionContext) async throws -> [Status] {
+        var visitedIds: Set<Int64> = [statusId]
 
-        for status in statuses {
-            let subStatuses = try await descendants(for: status.requireID(), on: database)
-            statuses = statuses + subStatuses
-        }
-
-        return statuses
+        return try await descendants(for: statusId, visitedIds: &visitedIds, on: context)
     }
 
     func unlist(statusId: Int64, on database: Database) async throws {
@@ -2961,20 +3296,38 @@ final class StatusesService: StatusesServiceType {
         return userIds
     }
 
-    func getCategory(basedOn hashtags: [NoteTagDto], and categories: [NoteTagDto], on database: Database) async throws -> Category? {
+    func getCategory(basedOn hashtags: [NoteTagDto], and categories: [NoteTagDto], on context: ExecutionContext) async throws -> Category? {
+        let alwaysCalculateCategory = context.settings.cached?.alwaysCalculateCategory ?? false
+        
         // First we can return category base on it's name.
-        if let category = categories.first {
-            let categoryNormalized = category.name.uppercased().trimmingCharacters(in: [" "])
-            if let categoryFromDatabase = try await Category.query(on: database)
-                .filter(\.$nameNormalized == categoryNormalized)
-                .first() {
-                return categoryFromDatabase
-            }
+        let categoryFromDatabase = try await self.getCategoryFromDatabase(categories: categories, on: context)
+        
+        // When we don't need to recalculate category and we've found category we can return it.
+        if alwaysCalculateCategory == false, let categoryFromDatabase {
+            return categoryFromDatabase
         }
 
         // When we cannot find category based on the name (from tag) then we can calculate based on the hashtags.
         let hashtagString = hashtags.map { $0.name }
-        return try await getCategory(basedOn: hashtagString, on: database)
+        let calculatedCategory = try await getCategory(basedOn: hashtagString, on: context.db)
+
+        // We are retutning calculated category or category from database when we cannot calculate new category.
+        return calculatedCategory ?? categoryFromDatabase
+    }
+
+    private func createOnUserOwnerTimeline(ownerUserId: Int64, statusId: Int64, on context: ExecutionContext) async throws {
+        let ownerStatusFromDatabase = try await UserStatus.query(on: context.application.db)
+            .filter(\.$user.$id == ownerUserId)
+            .filter(\.$status.$id == statusId)
+            .first()
+
+        guard ownerStatusFromDatabase == nil else {
+            return
+        }
+
+        let ownerUserStatusId = context.application.services.snowflakeService.generate()
+        let ownerUserStatus = UserStatus(id: ownerUserStatusId, type: .owner, userId: ownerUserId, statusId: statusId)
+        try await ownerUserStatus.create(on: context.application.db)
     }
 
     private func getCategory(basedOn hashtags: [String], on database: Database) async throws -> Category? {
@@ -2991,6 +3344,19 @@ final class StatusesService: StatusesServiceType {
             .first()
 
         return categoryQuery
+    }
+    
+    private func getCategoryFromDatabase(categories: [NoteTagDto], on context: ExecutionContext) async throws -> Category? {
+        if let category = categories.first {
+            let categoryNormalized = category.name.uppercased().trimmingCharacters(in: [" "])
+            if let categoryFromDatabase = try await Category.query(on: context.db)
+                .filter(\.$nameNormalized == categoryNormalized)
+                .first() {
+                return categoryFromDatabase
+            }
+        }
+        
+        return nil
     }
 
     private func saveAttachment(attachment: MediaAttachmentDto, userId: Int64, order: Int, on context: ExecutionContext) async throws -> Attachment? {
@@ -3027,6 +3393,9 @@ final class StatusesService: StatusesServiceType {
 
         // Get fileName from URL.
         let fileName = attachment.url.fileName
+        let originalFileName = attachment.originalImagePreserved
+            ? try OriginalImageFile.storageFileName(for: tmpOriginalFileUrl, fallbackFileName: fileName)
+            : fileName
 
         let applicationSettings = context.settings.cached
         let imageQuality = applicationSettings?.imageQuality ?? Constants.imageQuality
@@ -3038,7 +3407,7 @@ final class StatusesService: StatusesServiceType {
 
         // Save original image.
         context.logger.info("Saving orginal image '\(tmpOriginalFileUrl)' in storage provider.")
-        let savedOriginalFileName = try await storageService.save(fileName: fileName, url: tmpOriginalFileUrl, on: context)
+        let savedOriginalFileName = try await storageService.save(fileName: originalFileName, url: tmpOriginalFileUrl, on: context)
 
         // Save small image.
         context.logger.info("Saving resized image '\(tmpSmallFileUrl)' in storage provider.")
@@ -3084,7 +3453,8 @@ final class StatusesService: StatusesServiceType {
                                               description: attachment.name,
                                               blurhash: attachment.blurhash,
                                               locationId: locationId,
-                                              order: order)
+                                              order: order,
+                                              originalImagePreserved: attachment.originalImagePreserved)
 
         // Operation in database should be performed in one transaction.
         context.logger.info("Saving attachment '\(attachment.url)' in database.")
@@ -3255,7 +3625,7 @@ final class StatusesService: StatusesServiceType {
         var page = 0
 
         // We have to download ancestors when status is comment (in notifications screen we can show main photo which is favourited).
-        let ancestors = try await statusesService.ancestors(for: status.requireID(), on: context.db)
+        let ancestors = try await statusesService.ancestors(for: status.requireID(), on: context)
 
         // We have to iterate by boosts and send update notifications.
         while true {
@@ -3327,4 +3697,52 @@ final class StatusesService: StatusesServiceType {
 
         return []
     }
+
+    /// Visits each status once, including hidden branches, so existing cycles cannot exhaust context requests.
+    private func descendants(for statusId: Int64, visitedIds: inout Set<Int64>, on context: ExecutionContext) async throws -> [Status] {
+        let directStatuses = try await Status.query(on: context.db)
+            .filter(\.$replyToStatus.$id == statusId)
+            .with(\.$user)
+            .with(\.$attachments) { attachment in
+                attachment.with(\.$originalFile)
+                attachment.with(\.$smallFile)
+                attachment.with(\.$originalHdrFile)
+                attachment.with(\.$exif)
+                attachment.with(\.$license)
+                attachment.with(\.$location) { location in
+                    location.with(\.$country)
+                }
+            }
+            .with(\.$hashtags)
+            .with(\.$mentions)
+            .with(\.$category)
+            .with(\.$user)
+            .sort(\.$createdAt, .ascending)
+            .all()
+
+        var statuses: [Status] = []
+        var unvisitedStatuses: [Status] = []
+
+        for status in directStatuses {
+            guard visitedIds.insert(try status.requireID()).inserted else {
+                continue
+            }
+
+            unvisitedStatuses.append(status)
+
+            if try await self.can(view: status, userId: context.userId, on: context) {
+                statuses.append(status)
+            }
+        }
+
+        // Traverse every branch, including replies hidden from the requesting user,
+        // because a visible status may be a descendant of a hidden one.
+        for status in unvisitedStatuses {
+            let subStatuses = try await descendants(for: status.requireID(), visitedIds: &visitedIds, on: context)
+            statuses = statuses + subStatuses
+        }
+
+        return statuses
+    }
+
 }

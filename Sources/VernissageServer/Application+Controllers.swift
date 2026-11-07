@@ -63,9 +63,13 @@ extension Application {
         try self.register(collection: RelationshipsController())
         try self.register(collection: FollowRequestsController())
         try self.register(collection: TimelinesController())
+        try self.register(collection: TimelineMarkersController())
         try self.register(collection: NotificationsController())
         try self.register(collection: InvitationsController())
         try self.register(collection: CategoriesController())
+        try self.register(collection: CamerasController())
+        try self.register(collection: LensesController())
+        try self.register(collection: FilmsController())
         try self.register(collection: ReportsController())
         try self.register(collection: TrendingController())
         try self.register(collection: LicensesController())
@@ -92,6 +96,7 @@ extension Application {
         try self.register(collection: UserBlockedDomainsController())
         try self.register(collection: HomeCardsController())
         try self.register(collection: UserMutesController())
+        try self.register(collection: DirectMessagesController())
         try self.register(collection: UserBlockedUsersController())
     }
 }

@@ -36,6 +36,7 @@ struct SettingsDto {
     var showNewsForAnonymous: Bool
     var showSharedBusinessCards: Bool
     var imageQuality: Int
+    let alwaysCalculateCategory: Bool?
     
     var maxCharacters: Int
     var maxMediaAttachments: Int
@@ -71,6 +72,9 @@ struct SettingsDto {
     var showEditorsUsersChoiceForAnonymous: Bool
     var showHashtagsForAnonymous: Bool
     var showCategoriesForAnonymous: Bool
+    var showCamerasForAnonymous: Bool
+    var showLensesForAnonymous: Bool
+    var showFilmsForAnonymous: Bool
     
     // Privacy and Terms of Service.
     var privacyPolicyUpdatedAt: String
@@ -139,6 +143,7 @@ struct SettingsDto {
         self.showNewsForAnonymous = settings.getBool(.showNewsForAnonymous) ?? false
         self.showSharedBusinessCards = settings.getBool(.showSharedBusinessCards) ?? false
         self.imageQuality = settings.getInt(.imageQuality) ?? Constants.imageQuality
+        self.alwaysCalculateCategory = settings.getBool(.alwaysCalculateCategory) ?? false
         
         self.isOpenAIEnabled = settings.getBool(.isOpenAIEnabled) ?? false
         self.openAIKey = settings.getString(.openAIKey) ?? ""
@@ -164,6 +169,9 @@ struct SettingsDto {
         self.showEditorsUsersChoiceForAnonymous = settings.getBool(.showEditorsUsersChoiceForAnonymous) ?? false
         self.showHashtagsForAnonymous = settings.getBool(.showHashtagsForAnonymous) ?? false
         self.showCategoriesForAnonymous = settings.getBool(.showCategoriesForAnonymous) ?? false
+        self.showCamerasForAnonymous = settings.getBool(.showCamerasForAnonymous) ?? false
+        self.showLensesForAnonymous = settings.getBool(.showLensesForAnonymous) ?? false
+        self.showFilmsForAnonymous = settings.getBool(.showFilmsForAnonymous) ?? false
         
         self.privacyPolicyUpdatedAt = settings.getString(.privacyPolicyUpdatedAt) ?? ""
         self.privacyPolicyContent = settings.getString(.privacyPolicyContent) ?? ""
@@ -187,6 +195,7 @@ struct SettingsDto {
         self.purgeStatusesJobEnabled = settings.getBool(.purgeStatusesJobEnabled) ?? false
         self.rescheduleActivityPubJobEnabled = settings.getBool(.rescheduleActivityPubJobEnabled) ?? false
         self.shortPeriodTrendingJobEnabled = settings.getBool(.shortPeriodTrendingJobEnabled) ?? false
+        
     }
 }
 

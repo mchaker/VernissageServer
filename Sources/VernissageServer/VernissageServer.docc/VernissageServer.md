@@ -65,6 +65,7 @@ can be added by the system administrator.
 
 ### Essentials
 
+- <doc:InstallViaTool>
 - <doc:HostVernissageServer>
 - <doc:HostVernissageWeb>
 - <doc:DockerContainers>
@@ -96,11 +97,14 @@ a secure HTTP signature, and some are only accessible to registered users of a s
 - ``AvatarsController``
 - ``BookmarksController``
 - ``BusinessCardsController``
+- ``CamerasController``
 - ``CategoriesController``
 - ``CountriesController``
 - ``ErrorItemsController``
 - ``ExportsController``
+- ``DirectMessagesController``
 - ``FavouritesController``
+- ``FilmsController``
 - ``FollowingImportsController``
 - ``FollowRequestsController``
 - ``HashtagsController``
@@ -112,6 +116,7 @@ a secure HTTP signature, and some are only accessible to registered users of a s
 - ``InstanceController``
 - ``InvitationsController``
 - ``LicensesController``
+- ``LensesController``
 - ``LocationsController``
 - ``NodeInfoController``
 - ``NotificationsController``
@@ -130,6 +135,7 @@ a secure HTTP signature, and some are only accessible to registered users of a s
 - ``SharedBusinessCardsController``
 - ``StatusActivityPubEventsController``
 - ``StatusesController``
+- ``TimelineMarkersController``
 - ``TimelinesController``
 - ``TrendingController``
 - ``UserAliasesController``
@@ -145,9 +151,16 @@ a secure HTTP signature, and some are only accessible to registered users of a s
 In many cases, exchanging information through the endpoints exposed by the controllers requires passing objects.
 The list below contains definitions of the objects used for communication with Vernissage.
 
+- ``DirectConversationDto``
+- ``DirectConversationMuteRequestDto``
+- ``DirectConversationReadRequestDto``
+- ``DirectConversationsUnreadCountDto``
+- ``DirectMessageDto``
+- ``DirectMessageRequestDto``
 - ``AccessTokenDto``
 - ``ActivityPubFollowRequestDto``
 - ``ActivityPubFollowRespondDto``
+- ``ActivityPubMoveRequestDto``
 - ``ActivityPubProfileUpdateJobDto``
 - ``ActivityPubReblogDto``
 - ``ActivityPubRequestDto``
@@ -158,6 +171,7 @@ The list below contains definitions of the objects used for communication with V
 - ``AttachmentDescriptionDto``
 - ``ArticleDto``
 - ``ArticleFileInfoDto``
+- ``ArticlesCountDto``
 - ``ArticleVisibilityDto``
 - ``ArchiveDto``
 - ``ArchiveStatusDto``
@@ -168,6 +182,7 @@ The list below contains definitions of the objects used for communication with V
 - ``BusinessCardAvatarDto``
 - ``BusinessCardDto``
 - ``BusinessCardFieldDto``
+- ``CameraDto``
 - ``CategoryDto``
 - ``CategoryHashtagDto``
 - ``ChangeEmailDto``
@@ -180,12 +195,15 @@ The list below contains definitions of the objects used for communication with V
 - ``CountryDto``
 - ``EmailAddressDto``
 - ``EmailDto``
+- ``EmailJobDto``
 - ``EmailSecureMethodDto``
+- ``EmailSenderJobDto``
 - ``ErrorItemDto``
 - ``ErrorItemSourceDto``
 - ``ExifDto``
 - ``ExternalLoginRequestDto``
 - ``FileInfoDto``
+- ``FilmDto``
 - ``FlexiFieldDto``
 - ``FollowingImportDto``
 - ``FollowingImportItemDto``
@@ -200,6 +218,7 @@ The list below contains definitions of the objects used for communication with V
 - ``InstanceDto``
 - ``InstanceStatisticsDto``
 - ``InvitationDto``
+- ``LensDto``
 - ``LicenseDto``
 - ``LinkableParams``
 - ``LinkableResultDto``
@@ -208,6 +227,7 @@ The list below contains definitions of the objects used for communication with V
 - ``LocationsJobDto``
 - ``LoginRequestDto``
 - ``MetadataDto``
+- ``MigrationActivityPubEventItemJobDto``
 - ``NotificationDto``
 - ``NotificationTypeDto``
 - ``NotificationsCountDto``
@@ -251,11 +271,14 @@ The list below contains definitions of the objects used for communication with V
 - ``StatusActivityPubEventTypeDto``
 - ``StatusContextDto``
 - ``StatusDeleteJobDto``
+- ``DirectMessageDeleteJobDto``
 - ``StatusDto``
 - ``StatusUnfavouriteJobDto``
 - ``StatusRequestDto``
 - ``StatusVisibilityDto``
 - ``TemporaryAttachmentDto``
+- ``TimelineKindDto``
+- ``TimelineMarkerDto``
 - ``TrendingStatusPeriodDto``
 - ``TwoFactorTokenDto``
 - ``UnfollowRequestDto``
@@ -280,12 +303,16 @@ The list below contains definitions of the objects used for communication with V
 
 ### Services
 
+- ``AccountMigrationActivityPubService``
 - ``AccountMigrationService``
+- ``ActivityPubDirectMessagesService``
+- ``ActivityPubDirectMessagesServiceType``
 - ``ActivityPubDownloadCollectionService``
 - ``ActivityPubDownloadStatusService``
 - ``ActivityPubDownloadUserService``
 - ``ActivityPubIncomingService``
 - ``ActivityPubOutgoingCollectionService``
+- ``ActivityPubOutgoingMigrationService``
 - ``ActivityPubOutgoingReportService``
 - ``ActivityPubOutgoingStatusService``
 - ``ActivityPubOutgoingUserService``
@@ -300,8 +327,12 @@ The list below contains definitions of the objects used for communication with V
 - ``ClearDeletedUsersService``
 - ``CollectionsService``
 - ``CryptoService``
+- ``DirectMessagesService``
+- ``DirectMessagesServiceType``
+- ``EmailDeliveryService``
 - ``EmailsService``
 - ``ErrorItemsService``
+- ``ExifService``
 - ``ExternalUsersService``
 - ``FailedLoginsService``
 - ``FlexiFieldService``
@@ -364,9 +395,11 @@ The list below contains definitions of the objects used for communication with V
 - ``ChangePasswordError``
 - ``ConfirmEmailError``
 - ``CryptoError``
+- ``DirectMessageError``
 - ``EntityForbiddenError``
 - ``EntityNotFoundError``
 - ``ErrorItemError``
+- ``ExifServiceError``
 - ``ExportsError``
 - ``FollowImportError``
 - ``FollowRequestError``
@@ -399,26 +432,31 @@ The list below contains definitions of the objects used for communication with V
 - ``StorageError``
 - ``TemporaryFileError``
 - ``TimelineError``
+- ``TimelineMarkerError``
 - ``TwoFactorTokenError``
 - ``UserAliasError``
 - ``UserError``
 - ``UserBlockedDomainError``
 - ``UserSettingError``
 - ``XsrfValidationError``
+- ``WellKnownError``
 
 ### Queue Background Jobs
 
 - ``ActivityPubFollowRequesterJob``
+- ``ActivityPubMigrationFollowRequesterJob``
+- ``ActivityPubMoveRequesterJob``
 - ``ActivityPubFollowResponderJob``
 - ``ActivityPubProfileUpdateJob``
 - ``ActivityPubSharedInboxJob``
 - ``ActivityPubStatusJob``
 - ``ActivityPubUserInboxJob``
-- ``ActivityPubUserOutboxJob``
 - ``CollectionUpdaterJob``
 - ``EmailJob``
+- ``EmailSenderJob``
 - ``FlagCreaterJob``
 - ``FollowingImporterJob``
+- ``RetryableAsyncJob``
 - ``StatusCreaterJob``
 - ``StatusDeleterJob``
 - ``StatusFavouriterJob``
@@ -441,10 +479,13 @@ The list below contains definitions of the objects used for communication with V
 - ``ClearQuickCaptchasJob``
 - ``CreateArchiveJob``
 - ``DeleteArchiveJob``
+- ``EmailSchedulerJob``
 - ``LocationsJob``
 - ``LongPeriodTrendingJob``
 - ``PurgeStatusesJob``
+- ``RecoverMissingStatusActivityPubEventsJob``
 - ``RescheduleActivityPubJob``
+- ``RescheduleAccountMigrationActivityPubJob``
 - ``ShortPeriodTrendingJob``
 
 ### OAuth
@@ -460,6 +501,7 @@ The list below contains definitions of the objects used for communication with V
 - ``ApplicationSettings``
 - ``Article``
 - ``ArticleFileInfo``
+- ``ArticleMarker``
 - ``ArticleRead``
 - ``ArticleVisibility``
 - ``ArticleVisibilityType``
@@ -472,35 +514,58 @@ The list below contains definitions of the objects used for communication with V
 - ``AuthClientType``
 - ``BusinessCard``
 - ``BusinessCardField``
+- ``Camera``
+- ``CameraStatus``
 - ``Category``
 - ``CategoryHashtag``
 - ``Country``
+- ``DeletedDirectMessage``
+- ``DeletedDirectMessageRecipient``
+- ``DirectConversation``
+- ``DirectMessageLikeReceipt``
+- ``DirectMessageStoreResult``
 - ``DisposableEmail``
+- ``EmailDelivery``
+- ``EmailDeliveryAttempt``
+- ``EmailDeliveryStatus``
 - ``ErrorItem``
 - ``ErrorItemSource``
 - ``Event``
 - ``EventType``
 - ``Exif``
 - ``ExifHistory``
+- ``ExifTimelineMetadata``
 - ``ExternalUser``
 - ``FailedLogin``
 - ``FeaturedUser``
 - ``FeaturedStatus``
 - ``FileInfo``
+- ``Film``
+- ``FilmStatus``
 - ``FlexiField``
 - ``Follow``
 - ``FollowingImport``
 - ``FollowingImportItem``
 - ``FollowingImportItemStatus``
 - ``FollowingImportStatus``
+- ``HashtagSearchResult``
 - ``HomeCard``
 - ``InstanceBlockedDomain``
 - ``Invitation``
+- ``Lens``
+- ``LensStatus``
 - ``ImageOrientation``
 - ``License``
 - ``LinkableResult``
 - ``Localizable``
 - ``Location``
+- ``MigrationActivityPubEventItemStatus``
+- ``MigrationActivityPubEventResult``
+- ``MigrationFollowActivityPubEvent``
+- ``MigrationFollowActivityPubEventItem``
+- ``MigrationFollowActivityPubEventItemType``
+- ``MigrationMoveActivityPubEvent``
+- ``MigrationMoveActivityPubEventItem``
 - ``Notification``
 - ``NotificationMarker``
 - ``NotificationType``
@@ -531,8 +596,12 @@ The list below contains definitions of the objects used for communication with V
 - ``StatusHistory``
 - ``StatusMention``
 - ``StatusMentionHistory``
+- ``StatusRecipient``
+- ``StatusRecipientType``
 - ``StatusVisibility``
 - ``SuspendedServer``
+- ``TimelineKind``
+- ``TimelineMarker``
 - ``TrendingHashtag``
 - ``TrendingPeriod``
 - ``TrendingStatus``
@@ -542,6 +611,7 @@ The list below contains definitions of the objects used for communication with V
 - ``UserAlias``
 - ``UserBlockedUser``
 - ``UserBlockedDomain``
+- ``UserDirectConversation``
 - ``UserFollowedHashtag``
 - ``UserHashtag``
 - ``UserMute``

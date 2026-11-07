@@ -33,6 +33,7 @@ struct TemporaryAttachmentDto {
     var longitude: String?
     var flash: String?
     var focalLength: String?
+    var originalImagePreserved: Bool?
 }
 
 extension TemporaryAttachmentDto {
@@ -46,7 +47,8 @@ extension TemporaryAttachmentDto {
         self.init(id: attachment.stringId(),
                   url: baseImagesPath.finished(with: "/") + originalFileName,
                   previewUrl: baseImagesPath.finished(with: "/") + smallFileName,
-                  originalHdrUrl: orginalHdrUrlPath)
+                  originalHdrUrl: orginalHdrUrlPath,
+                  originalImagePreserved: attachment.originalImagePreserved)
     }
 }
 

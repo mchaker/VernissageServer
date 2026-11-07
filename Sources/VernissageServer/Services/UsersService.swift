@@ -68,6 +68,14 @@ protocol UsersServiceType: Sendable {
     /// - Throws: Database errors.
     func get(activityPubProfile: String, on database: Database) async throws -> User?
 
+    /// Retrieves a local user by either their public profile URL or ActivityPub profile URL.
+    /// - Parameters:
+    ///   - webfingerUrl: Profile URL supplied as a WebFinger resource.
+    ///   - database: Database to perform the query on.
+    /// - Returns: ``User`` object or nil if not found.
+    /// - Throws: Database errors.
+    func get(webfingerUrl: String, on database: Database) async throws -> User?
+
     /// Returns all users with moderator or administrator roles.
     /// - Parameter database: Database to perform the query on.
     /// - Returns: Array of users with moderator privileges.
@@ -358,6 +366,19 @@ final class UsersService: UsersServiceType {
         let activityPubProfileNormalized = activityPubProfile.uppercased()
         return try await User.query(on: database)
             .filter(\.$activityPubProfileNormalized == activityPubProfileNormalized)
+            .with(\.$flexiFields)
+            .with(\.$roles)
+            .first()
+    }
+
+    func get(webfingerUrl: String, on database: Database) async throws -> User? {
+        if let user = try await self.get(activityPubProfile: webfingerUrl, on: database), user.isLocal {
+            return user
+        }
+
+        return try await User.query(on: database)
+            .filter(\.$url == webfingerUrl)
+            .filter(\.$isLocal == true)
             .with(\.$flexiFields)
             .with(\.$roles)
             .first()
@@ -693,7 +714,7 @@ final class UsersService: UsersServiceType {
 
         let emailNormalized = email.uppercased()
 
-        let userFromDb = try await User.query(on: request.db).filter(\.$emailNormalized == emailNormalized).first()
+        let userFromDb = try await User.query(on: request.db).withDeleted().filter(\.$emailNormalized == emailNormalized).first()
         if userFromDb != nil {
             return true
         }
@@ -723,7 +744,7 @@ final class UsersService: UsersServiceType {
 
     func validateEmail(email: String?, on request: Request) async throws {
         let emailNormalized = (email ?? "").uppercased()
-        let user = try await User.query(on: request.db).filter(\.$emailNormalized == emailNormalized).first()
+        let user = try await User.query(on: request.db).withDeleted().filter(\.$emailNormalized == emailNormalized).first()
         if user != nil {
             throw RegisterError.emailIsAlreadyConnected
         }
@@ -812,7 +833,7 @@ final class UsersService: UsersServiceType {
             do {
                 try await context
                     .queues(.collectionUpdater)
-                    .dispatch(CollectionUpdaterJob.self, user.requireID(), maxRetryCount: 2)
+                    .dispatch(CollectionUpdaterJob.self, user.requireID(), maxRetryCount: 3)
             } catch {
                 context.logger.warning("Cannot dispatch featured collection synchronization for user '\(user.activityPubProfile)'. Error: \(error).")
             }
@@ -893,7 +914,29 @@ final class UsersService: UsersServiceType {
     }
 
     func delete(user: User, force: Bool, on database: Database) async throws {
-        try await user.delete(force: force, on: database)
+        // Remote accounts and forced deletions use Fluent's standard deletion.
+        guard user.isLocal && !force else {
+            try await user.delete(force: force, on: database)
+            return
+        }
+
+        // Soft-delete local accounts and permanently clear their contact and profile details in the same transaction.
+        let userId = try user.requireID()
+        try await database.transaction { transaction in
+            try await User.query(on: transaction)
+                .withDeleted()
+                .filter(\.$id == userId)
+                .set([
+                    "email": .null,
+                    "emailNormalized": .null,
+                    "name": .null,
+                    "bio": .null,
+                    "reason": .null,
+                    "queryNormalized": .bind("")
+                ])
+                .update()
+            try await user.delete(force: false, on: transaction)
+        }
     }
 
     func delete(localUser: User, on context: QueueContext) async throws {
@@ -912,8 +955,15 @@ final class UsersService: UsersServiceType {
     }
 
     private func deleteUserData(for user: User, forceDeleteUser: Bool, on context: ExecutionContext) async throws {
+        let statusesService = context.services.statusesService
+        let directMessagesService = context.services.directMessagesService
+        
         // We have to try to delete all user's statuses from local database.
-        try? await context.services.statusesService.delete(owner: user.requireID(), on: context)
+        try await statusesService.delete(owner: user.requireID(), on: context)
+
+        // Account deletion removes direct-message history without leaving message placeholders.
+        // Complete this cleanup before physically deleting a remote author and cascading its references.
+        try await directMessagesService.removeAccount(userId: user.requireID(), on: context)
 
         // Mark remote user as deleted first (only when user doesn't have any statuses).
         // This protects us from partial cleanup failures leaving an active account in the database.
@@ -1037,6 +1087,11 @@ final class UsersService: UsersServiceType {
             .filter(\.$user.$id == userId)
             .delete()
 
+        // Remove timeline marker state owned by this user.
+        try? await TimelineMarker.query(on: database)
+            .filter(\.$user.$id == userId)
+            .delete()
+
         // Remove domain blocks configured by this user.
         try? await UserBlockedDomain.query(on: database)
             .filter(\.$user.$id == userId)
@@ -1065,6 +1120,9 @@ final class UsersService: UsersServiceType {
 
         // Remove ActivityPub delivery event headers owned by the user.
         try? await statusActivityPubEvents.delete(on: database)
+
+        // Remove account-migration deliveries before deleting events or actors referenced by them.
+        try await self.deleteAccountMigrationActivityPubEvents(for: userId, on: database)
         
         // Revoke refresh tokens that can authenticate as this user.
         try? await RefreshToken.query(on: database)
@@ -1171,6 +1229,17 @@ final class UsersService: UsersServiceType {
 
         let articleIds = articles.compactMap { $0.id }
 
+        // Remove article markers owned by this user or pointing at this user's articles.
+        try? await ArticleMarker.query(on: database)
+            .group(.or) { group in
+                group.filter(\.$user.$id == userId)
+
+                if articleIds.isEmpty == false {
+                    group.filter(\.$article.$id ~~ articleIds)
+                }
+            }
+            .delete()
+
         // Remove article-read state created by this user or pointing at this user's articles.
         try? await ArticleRead.query(on: database)
             .group(.or) { group in
@@ -1266,6 +1335,48 @@ final class UsersService: UsersServiceType {
         return userIdsToRecalculate
     }
 
+    private func deleteAccountMigrationActivityPubEvents(for userId: Int64, on database: Database) async throws {
+        let followEvents = try await MigrationFollowActivityPubEvent.query(on: database)
+            .group(.or) { group in
+                group
+                    .filter(\.$sourceUser.$id == userId)
+                    .filter(\.$targetUser.$id == userId)
+            }
+            .all()
+
+        let followEventIds = try followEvents.map { try $0.requireID() }
+
+        // An item can reference the deleted user independently of its migration event.
+        try await MigrationFollowActivityPubEventItem.query(on: database)
+            .filter(\.$actor.$id == userId)
+            .delete()
+
+        if followEventIds.isEmpty == false {
+            try await MigrationFollowActivityPubEventItem.query(on: database)
+                .filter(\.$migrationFollowActivityPubEvent.$id ~~ followEventIds)
+                .delete()
+
+            try await followEvents.delete(on: database)
+        }
+
+        let moveEvents = try await MigrationMoveActivityPubEvent.query(on: database)
+            .group(.or) { group in
+                group
+                    .filter(\.$sourceUser.$id == userId)
+                    .filter(\.$targetUser.$id == userId)
+            }
+            .all()
+
+        let moveEventIds = try moveEvents.map { try $0.requireID() }
+        if moveEventIds.isEmpty == false {
+            try await MigrationMoveActivityPubEventItem.query(on: database)
+                .filter(\.$migrationMoveActivityPubEvent.$id ~~ moveEventIds)
+                .delete()
+
+            try await moveEvents.delete(on: database)
+        }
+    }
+
     func createGravatarHash(from email: String) -> String {
         let gravatarEmail = email.lowercased().trimmingCharacters(in: [" "])
 
@@ -1279,6 +1390,7 @@ final class UsersService: UsersServiceType {
     func ownStatuses(for userId: Int64, linkableParams: LinkableParams, onlyPinned: Bool, on context: ExecutionContext) async throws -> LinkableResult<Status> {
         var query = Status.query(on: context.db)
             .filter(\.$user.$id == userId)
+            .filter(\.$visibility != .mentioned)
             .filter(\.$reblog.$id == nil)
             .filter(\.$replyToStatus.$id == nil)
             .sort(\.$createdAt, .descending)
@@ -1525,12 +1637,18 @@ final class UsersService: UsersServiceType {
             userDto.emailWasConfirmed = user.emailWasConfirmed
             userDto.locale = user.locale
             userDto.isBlocked = user.isBlocked
+            userDto.isSuppressed = user.isSuppressed
             userDto.isApproved = user.isApproved
             userDto.twoFactorEnabled = user.twoFactorEnabled
             userDto.manuallyApprovesFollowers = user.manuallyApprovesFollowers
             userDto.lastLoginDate = user.lastLoginDate
             userDto.isSupporter = user.isSupporter
             userDto.reason = user.reason
+        }
+        
+        if user.isLocal == false {
+            userDto.isBlocked = user.isBlocked
+            userDto.isSuppressed = user.isSuppressed
         }
 
         return userDto

@@ -30,12 +30,16 @@ enum EntityNotFoundError: String, Error {
     case archiveNotFound
     case userSettingNotFound
     case categoryNotFound
+    case cameraNotFound
+    case lensNotFound
+    case filmNotFound
     case followingImportNotFound
     case articleNotFound
     case articleFileInfoNotFound
     case businessCardNotFound
     case sharedBusinessCardNotFound
     case statusActivityPubEventNotFound
+    case timelineMarkerNotFound
 }
 
 extension EntityNotFoundError: LocalizedTerminateError {
@@ -67,12 +71,16 @@ extension EntityNotFoundError: LocalizedTerminateError {
         case .archiveNotFound: return "Archive not exists."
         case .userSettingNotFound: return "User setting not exists."
         case .categoryNotFound: return "Category not exists."
+        case .cameraNotFound: return "Camera not exists."
+        case .lensNotFound: return "Lens not exists."
+        case .filmNotFound: return "Film not exists."
         case .followingImportNotFound: return "Following import not exists."
         case .articleNotFound: return "Article not exists."
         case .articleFileInfoNotFound: return "Article file not exists."
         case .businessCardNotFound: return "Business card not exists."
         case .sharedBusinessCardNotFound: return "Shared business card not exists."
         case .statusActivityPubEventNotFound: return "Status ActivityPub event not exists."
+        case .timelineMarkerNotFound: return "Timeline marker not exists."
         }
     }
 

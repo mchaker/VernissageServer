@@ -5,7 +5,7 @@
 //
 
 public struct MediaAttachmentDto {
-    public let type = "Image"
+    public let type: String
     public let mediaTypeRaw: String?
     public let url: String
     public let name: String?
@@ -16,6 +16,7 @@ public struct MediaAttachmentDto {
     public let exifData: [MediaExifDataDto]?
     public let location: MediaLocationDto?
     public let hdrImageUrl: String?
+    public let originalImagePreserved: Bool
     
     public init(mediaType: String,
                 url: String,
@@ -26,8 +27,10 @@ public struct MediaAttachmentDto {
                 hdrImageUrl: String?,
                 exif: MediaExifDto?,
                 exifData: [MediaExifDataDto]?,
-                location: MediaLocationDto?
+                location: MediaLocationDto?,
+                originalImagePreserved: Bool = false
     ) {
+        self.type = "Image"
         self.mediaTypeRaw = mediaType
         self.url = url
         self.name = name
@@ -38,6 +41,7 @@ public struct MediaAttachmentDto {
         self.exifData = exifData
         self.location = location
         self.hdrImageUrl = hdrImageUrl
+        self.originalImagePreserved = originalImagePreserved
     }
     
     enum CodingKeys: String, CodingKey {
@@ -52,6 +56,45 @@ public struct MediaAttachmentDto {
         case exifData
         case location
         case hdrImageUrl
+        case originalImagePreserved
+    }
+
+    private enum DecodingKeys: String, CodingKey {
+        case type
+        case mediaTypeRaw = "mediaType"
+        case url
+        case href
+        case name
+        case blurhash
+        case width
+        case height
+        case exif
+        case exifData
+        case location
+        case hdrImageUrl
+        case originalImagePreserved
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: DecodingKeys.self)
+
+        self.type = try container.decodeIfPresent(String.self, forKey: .type) ?? "Image"
+        self.mediaTypeRaw = try container.decodeIfPresent(String.self, forKey: .mediaTypeRaw)
+        self.name = try container.decodeIfPresent(String.self, forKey: .name)
+        self.blurhash = try container.decodeIfPresent(String.self, forKey: .blurhash)
+        self.width = try container.decodeIfPresent(Int.self, forKey: .width)
+        self.height = try container.decodeIfPresent(Int.self, forKey: .height)
+        self.exif = try container.decodeIfPresent(MediaExifDto.self, forKey: .exif)
+        self.exifData = try container.decodeIfPresent([MediaExifDataDto].self, forKey: .exifData)
+        self.location = try container.decodeIfPresent(MediaLocationDto.self, forKey: .location)
+        self.hdrImageUrl = try container.decodeIfPresent(String.self, forKey: .hdrImageUrl)
+        self.originalImagePreserved = try container.decodeIfPresent(Bool.self, forKey: .originalImagePreserved) ?? false
+
+        if let url = try container.decodeIfPresent(String.self, forKey: .url) {
+            self.url = url
+        } else {
+            self.url = try container.decode(String.self, forKey: .href)
+        }
     }
 }
 
@@ -70,6 +113,10 @@ extension MediaAttachmentDto {
     }
     
     public func isSupportedImage() -> Bool {
+        guard self.type != "Link" else {
+            return false
+        }
+
         let mediaTypeNormalized = self.mediaType.lowercased()
         return mediaTypeNormalized == "image/jpeg" || mediaTypeNormalized == "image/jpg" || mediaTypeNormalized == "image/png" || mediaTypeNormalized == "image/webp"
     }

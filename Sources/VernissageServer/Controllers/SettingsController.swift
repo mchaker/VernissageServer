@@ -193,6 +193,9 @@ struct SettingsController {
                                                   showEditorsUsersChoiceForAnonymous: settings.showEditorsUsersChoiceForAnonymous,
                                                   showHashtagsForAnonymous: settings.showHashtagsForAnonymous,
                                                   showCategoriesForAnonymous: settings.showCategoriesForAnonymous,
+                                                  showCamerasForAnonymous: settings.showCamerasForAnonymous,
+                                                  showLensesForAnonymous: settings.showLensesForAnonymous,
+                                                  showFilmsForAnonymous: settings.showFilmsForAnonymous,
                                                   privacyPolicyUpdatedAt: settings.privacyPolicyUpdatedAt,
                                                   privacyPolicyContent: privacyPolicyContent,
                                                   termsOfServiceUpdatedAt: settings.termsOfServiceUpdatedAt,
@@ -308,6 +311,9 @@ struct SettingsController {
             try await updateBool(.showEditorsUsersChoiceForAnonymous, settingsDto.showEditorsUsersChoiceForAnonymous)
             try await updateBool(.showHashtagsForAnonymous, settingsDto.showHashtagsForAnonymous)
             try await updateBool(.showCategoriesForAnonymous, settingsDto.showCategoriesForAnonymous)
+            try await updateBool(.showCamerasForAnonymous, settingsDto.showCamerasForAnonymous)
+            try await updateBool(.showLensesForAnonymous, settingsDto.showLensesForAnonymous)
+            try await updateBool(.showFilmsForAnonymous, settingsDto.showFilmsForAnonymous)
             try await updateBool(.clearAttachmentsJobEnabled, settingsDto.clearAttachmentsJobEnabled)
             try await updateBool(.clearDeletedUsersJobEnabled, settingsDto.clearDeletedUsersJobEnabled)
             try await updateBool(.clearErrorItemsJobEnabled, settingsDto.clearErrorItemsJobEnabled)
@@ -320,6 +326,10 @@ struct SettingsController {
             try await updateBool(.purgeStatusesJobEnabled, settingsDto.purgeStatusesJobEnabled)
             try await updateBool(.rescheduleActivityPubJobEnabled, settingsDto.rescheduleActivityPubJobEnabled)
             try await updateBool(.shortPeriodTrendingJobEnabled, settingsDto.shortPeriodTrendingJobEnabled)
+
+            if let alwaysCalculateCategory = settingsDto.alwaysCalculateCategory {
+                try await updateBool(.alwaysCalculateCategory, alwaysCalculateCategory)
+            }
             
             // Integers.
             try await updateInt(.emailPort, settingsDto.emailPort)

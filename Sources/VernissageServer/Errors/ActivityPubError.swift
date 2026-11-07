@@ -35,6 +35,7 @@ enum ActivityPubError: Error {
     case missingSharedInboxUrl(String)
     case statusHasNotBeenDownloaded(String, String)
     case statusCannotBeProcessed(String, String)
+    case statusTypeNotSupported(String, String)
     case missingSupportedImageAttachments(String)
     case actorNotDownloaded(String)
     case invalidNoteUrl(String)
@@ -44,6 +45,7 @@ enum ActivityPubError: Error {
     case unrecognizedActivityPubProfileUrl
     case domainIsBlockedByInstance(String)
     case actorIsBlockedByInstance(String)
+    case actorIsSuppressedByInstance(String)
     case signatureActorDoesNotMatchPayloadActor(signatureActor: String, payloadActor: String)
 }
 
@@ -80,6 +82,7 @@ extension ActivityPubError: LocalizedTerminateError {
         case .missingSharedInboxUrl(let activityPubProfile): return "Missing shared inbox in local database for user: '\(activityPubProfile)'."
         case .statusHasNotBeenDownloaded(let statusActivityPubUrl, let errorDescription): return "Downloaded status is empty: \(statusActivityPubUrl). Error: \(errorDescription)"
         case .statusCannotBeProcessed(let statusActivityPubUrl, let errorDescription): return "Downloaded status cannot be processed: \(statusActivityPubUrl). Error: \(errorDescription)"
+        case .statusTypeNotSupported(let statusActivityPubUrl, let type): return "Downloaded object type '\(type)' is not supported: \(statusActivityPubUrl)."
         case .missingSupportedImageAttachments(let statusActivityPubUrl): return "Downloaded status does not have image attachments: \(statusActivityPubUrl)."
         case .actorNotDownloaded(let statusActivityPubUrl): return "Error during downloading actor from remote server: \(statusActivityPubUrl)."
         case .invalidNoteUrl(let statusActivityPubUrl): return "Invalid URL to status: \(statusActivityPubUrl)."
@@ -89,6 +92,7 @@ extension ActivityPubError: LocalizedTerminateError {
         case .unrecognizedActivityPubProfileUrl: return "Unrecognized ActivityPub profile URL."
         case .domainIsBlockedByInstance(let activityPubProfile): return "User's '\(activityPubProfile)' domain is blocked by the instance."
         case .actorIsBlockedByInstance(let activityPubProfile): return "Actor '\(activityPubProfile)' is blocked by the instance."
+        case .actorIsSuppressedByInstance(let activityPubProfile): return "Actor '\(activityPubProfile)' is suppressed by the instance."
         case .signatureActorDoesNotMatchPayloadActor(let signatureActor, let payloadActor): return "Signature actor '\(signatureActor)' does not match payload actor '\(payloadActor)'."
         }
     }
@@ -113,12 +117,15 @@ extension ActivityPubError: LocalizedTerminateError {
             return ["statusActivityPubUrl": statusActivityPubUrl, "errorDescription": errorDescription]
         case .statusCannotBeProcessed(let statusActivityPubUrl, let errorDescription):
             return ["statusActivityPubUrl": statusActivityPubUrl, "errorDescription": errorDescription]
+        case .statusTypeNotSupported(let statusActivityPubUrl, let type):
+            return ["statusActivityPubUrl": statusActivityPubUrl, "type": type]
         case .missingSupportedImageAttachments(let statusActivityPubUrl): return ["statusActivityPubUrl": statusActivityPubUrl]
         case .actorNotDownloaded(let statusActivityPubUrl): return ["statusActivityPubUrl": statusActivityPubUrl]
         case .invalidNoteUrl(let statusActivityPubUrl): return ["statusActivityPubUrl": statusActivityPubUrl]
         case .entityCaseError(let entityName): return ["entityName": entityName]
         case .domainIsBlockedByInstance(let activityPubProfile): return ["activityPubProfile": activityPubProfile]
         case .actorIsBlockedByInstance(let activityPubProfile): return ["activityPubProfile": activityPubProfile]
+        case .actorIsSuppressedByInstance(let activityPubProfile): return ["activityPubProfile": activityPubProfile]
         case .signatureActorDoesNotMatchPayloadActor(let signatureActor, let payloadActor):
             return ["signatureActor": signatureActor, "payloadActor": payloadActor]
         default: return nil
@@ -157,6 +164,7 @@ extension ActivityPubError: LocalizedTerminateError {
         case .missingSharedInboxUrl: return "missingSharedInboxUrl"
         case .statusHasNotBeenDownloaded: return "statusHasNotBeenDownloaded"
         case .statusCannotBeProcessed: return "statusCannotBeProcessed"
+        case .statusTypeNotSupported: return "statusTypeNotSupported"
         case .missingSupportedImageAttachments: return "missingSupportedImageAttachments"
         case .actorNotDownloaded: return "actorNotDownloaded"
         case .invalidNoteUrl: return "invalidNoteUrl"
@@ -166,6 +174,7 @@ extension ActivityPubError: LocalizedTerminateError {
         case .unrecognizedActivityPubProfileUrl: return "unrecognizedActivityPubProfileUrl"
         case .domainIsBlockedByInstance: return "domainIsBlockedByInstance"
         case .actorIsBlockedByInstance: return "actorIsBlockedByInstance"
+        case .actorIsSuppressedByInstance: return "actorIsSuppressedByInstance"
         case .signatureActorDoesNotMatchPayloadActor: return "signatureActorDoesNotMatchPayloadActor"
         }
     }

@@ -59,6 +59,7 @@ extension Application {
         try await ensureSettingExists(on: database, existing: settings, key: .showNewsForAnonymous, value: .boolean(false))
         try await ensureSettingExists(on: database, existing: settings, key: .showSharedBusinessCards, value: .boolean(false))
         try await ensureSettingExists(on: database, existing: settings, key: .imageQuality, value: .int(Constants.imageQuality))
+        try await ensureSettingExists(on: database, existing: settings, key: .alwaysCalculateCategory, value: .boolean(false))
 
         // Financial support.
         try await ensureSettingExists(on: database, existing: settings, key: .totalCost, value: .int(0))
@@ -112,6 +113,9 @@ extension Application {
         try await ensureSettingExists(on: database, existing: settings, key: .showEditorsUsersChoiceForAnonymous, value: .boolean(false))
         try await ensureSettingExists(on: database, existing: settings, key: .showHashtagsForAnonymous, value: .boolean(false))
         try await ensureSettingExists(on: database, existing: settings, key: .showCategoriesForAnonymous, value: .boolean(false))
+        try await ensureSettingExists(on: database, existing: settings, key: .showCamerasForAnonymous, value: .boolean(false))
+        try await ensureSettingExists(on: database, existing: settings, key: .showLensesForAnonymous, value: .boolean(false))
+        try await ensureSettingExists(on: database, existing: settings, key: .showFilmsForAnonymous, value: .boolean(false))
         
         // Privacy and Terms of Service.
         try await ensureSettingExists(on: database, existing: settings, key: .privacyPolicyUpdatedAt, value: .string("2025-01-18"))

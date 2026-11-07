@@ -48,6 +48,7 @@ extension Application {
     }
 
     private func registerQueueJobs() {
+        self.queues.add(EmailSenderJob())
         self.queues.add(EmailJob())
         self.queues.add(WebPushSenderJob())
         self.queues.add(UrlValidatorJob())
@@ -67,13 +68,14 @@ extension Application {
 
         self.queues.add(ActivityPubSharedInboxJob())
         self.queues.add(ActivityPubUserInboxJob())
-        self.queues.add(ActivityPubUserOutboxJob())
         self.queues.add(ActivityPubStatusJob())
         self.queues.add(ActivityPubProfileUpdateJob())
         self.queues.add(FlagCreaterJob())
         
         self.queues.add(ActivityPubFollowRequesterJob())
+        self.queues.add(ActivityPubMigrationFollowRequesterJob())
         self.queues.add(ActivityPubFollowResponderJob())
+        self.queues.add(ActivityPubMoveRequesterJob())
     }
 
     private func startQueueWorkers() throws {
@@ -102,13 +104,13 @@ extension Application {
             
             try self.queues.startInProcessJobs(on: .apSharedInbox)
             try self.queues.startInProcessJobs(on: .apUserInbox)
-            try self.queues.startInProcessJobs(on: .apUserOutbox)
             try self.queues.startInProcessJobs(on: .apStatus)
             try self.queues.startInProcessJobs(on: .apProfileUpdate)
             try self.queues.startInProcessJobs(on: .apFlag)
             
             try self.queues.startInProcessJobs(on: .apFollowRequester)
             try self.queues.startInProcessJobs(on: .apFollowResponder)
+            try self.queues.startInProcessJobs(on: .apMoveRequester)
         } else {
             self.logger.notice("All in process queues are disabled in the configuration.")
         }

@@ -22,6 +22,166 @@ struct ActivityPubIncomingServiceCreateTests {
     }
 
     @Test
+    func `Comment through boost should not be created when original owner blocks author`() async throws {
+        // Arrange.
+        let suffix = UUID().uuidString.replacingOccurrences(of: "-", with: "")
+        let owner = try await application.createUser(userName: "bo" + suffix)
+        let booster = try await application.createUser(userName: "bb" + suffix)
+        let original = try await application.createStatus(user: owner, note: "Original photo")
+        let boost = try await application.createStatus(user: booster, note: nil, reblogId: original.requireID())
+        let remote = try await application.createUser(userName: "br" + suffix, isLocal: false)
+        remote.activityPubProfile = "https://remote.example/actors/" + remote.userName
+        remote.activityPubProfileNormalized = remote.activityPubProfile.uppercased()
+        try await remote.save(on: application.db)
+        let activityPubIncomingService = ActivityPubIncomingService()
+        let queueContext = application.getQueueContext(queueName: QueueName(string: "ActivityPubSharedInboxJob"))
+        _ = try await application.createUserBlockedUser(userId: owner.requireID(), blockedUserId: remote.requireID(), reason: "Blocked")
+        let noteId = remote.activityPubProfile + "/statuses/" + UUID().uuidString
+        let note = NoteDto(id: noteId, summary: nil, inReplyTo: boost.activityPubId,
+                           published: Date().toISO8601String(), updated: nil, url: noteId,
+                           attributedTo: remote.activityPubProfile,
+                           to: .single(ActorDto(id: "https://www.w3.org/ns/activitystreams#Public")), cc: nil,
+                           sensitive: false, atomUri: nil, inReplyToAtomUri: nil, conversation: nil,
+                           content: "Federated reply to a boost", attachment: nil, tag: nil)
+        let requestActivity = ActivityDto(context: .single(ContextDto(value: "https://www.w3.org/ns/activitystreams")),
+                                          type: .create,
+                                          id: remote.activityPubProfile + "/activities/" + UUID().uuidString,
+                                          actor: .single(ActorDto(id: remote.activityPubProfile)),
+                                          object: .single(ObjectDto(id: noteId, type: .note, object: note)),
+                                          summary: nil,
+                                          signature: nil)
+        let request = ActivityPubRequestDto(activity: requestActivity, headers: [:], bodyHash: nil, bodyValue: "{}",
+                                            httpMethod: .post, httpPath: .sharedInbox, receivedAt: Date())
+
+        // Act.
+        try await activityPubIncomingService.create(activityPubRequest: request, on: queueContext.executionContext)
+
+        // Assert.
+        let comment = try await Status.query(on: application.db).filter(\.$activityPubId == noteId).first()
+        #expect(comment == nil)
+        #expect(try await application.getStatus(id: original.requireID())?.repliesCount == 0)
+        #expect(try await application.getStatus(id: boost.requireID())?.repliesCount == 0)
+    }
+
+    @Test
+    func `Comment through boost should belong to original status and notify its owner`() async throws {
+        // Arrange.
+        let suffix = UUID().uuidString.replacingOccurrences(of: "-", with: "")
+        let owner = try await application.createUser(userName: "bo" + suffix)
+        let booster = try await application.createUser(userName: "bb" + suffix)
+        let original = try await application.createStatus(user: owner, note: "Original photo")
+        let boost = try await application.createStatus(user: booster, note: nil, reblogId: original.requireID())
+        let remote = try await application.createUser(userName: "br" + suffix, isLocal: false)
+        remote.activityPubProfile = "https://remote.example/actors/" + remote.userName
+        remote.activityPubProfileNormalized = remote.activityPubProfile.uppercased()
+        try await remote.save(on: application.db)
+        let activityPubIncomingService = ActivityPubIncomingService()
+        let queueContext = application.getQueueContext(queueName: QueueName(string: "ActivityPubSharedInboxJob"))
+        let noteId = remote.activityPubProfile + "/statuses/" + UUID().uuidString
+        let note = NoteDto(id: noteId, summary: nil, inReplyTo: boost.activityPubId,
+                           published: Date().toISO8601String(), updated: nil, url: noteId,
+                           attributedTo: remote.activityPubProfile,
+                           to: .single(ActorDto(id: "https://www.w3.org/ns/activitystreams#Public")), cc: nil,
+                           sensitive: false, atomUri: nil, inReplyToAtomUri: nil, conversation: nil,
+                           content: "Federated reply to a boost", attachment: nil, tag: nil)
+        let requestActivity = ActivityDto(context: .single(ContextDto(value: "https://www.w3.org/ns/activitystreams")),
+                                          type: .create,
+                                          id: remote.activityPubProfile + "/activities/" + UUID().uuidString,
+                                          actor: .single(ActorDto(id: remote.activityPubProfile)),
+                                          object: .single(ObjectDto(id: noteId, type: .note, object: note)),
+                                          summary: nil,
+                                          signature: nil)
+        let request = ActivityPubRequestDto(activity: requestActivity, headers: [:], bodyHash: nil, bodyValue: "{}",
+                                            httpMethod: .post, httpPath: .sharedInbox, receivedAt: Date())
+
+        // Act.
+        try await activityPubIncomingService.create(activityPubRequest: request, on: queueContext.executionContext)
+
+        // Assert.
+        let comment = try #require(try await Status.query(on: application.db)
+            .filter(\.$activityPubId == noteId).first())
+        #expect(comment.$replyToStatus.id == original.id)
+        #expect(comment.$mainReplyToStatus.id == original.id)
+        #expect(try await application.getStatus(id: original.requireID())?.repliesCount == 1)
+        #expect(try await application.getStatus(id: boost.requireID())?.repliesCount == 0)
+        #expect(try await application.getNotification(
+            type: .newComment, to: owner.requireID(), by: remote.requireID(), statusId: original.requireID()) != nil)
+        #expect(try await application.getNotification(
+            type: .newComment, to: booster.requireID(), by: remote.requireID(), statusId: boost.requireID()) == nil)
+    }
+
+    @Test
+    func `Photo status from suppressed user should not be created`() async throws {
+        // Arrange.
+        let activityPubIncomingService = ActivityPubIncomingService()
+        let queueContext = application.getQueueContext(queueName: QueueName(string: "ActivityPubUserInboxJob"))
+
+        let sourceUser = try await application.createUser(userName: "remotesuppressedcreate",
+                                                          isLocal: false,
+                                                          isSuppressed: true)
+        let recipientUser = try await application.createUser(userName: "suppressedrecipient")
+        _ = try await application.createFollow(sourceId: recipientUser.requireID(), targetId: sourceUser.requireID(), approved: true)
+
+        let noteId = "https://remote.example/statuses/suppressed-create-1"
+        let noteDto = NoteDto(id: noteId,
+                              summary: nil,
+                              inReplyTo: nil,
+                              published: Date().toISO8601String(),
+                              updated: nil,
+                              url: noteId,
+                              attributedTo: sourceUser.activityPubProfile,
+                              to: .single(ActorDto(id: "https://www.w3.org/ns/activitystreams#Public")),
+                              cc: .single(ActorDto(id: "\(sourceUser.activityPubProfile)/followers")),
+                              sensitive: false,
+                              atomUri: nil,
+                              inReplyToAtomUri: nil,
+                              conversation: nil,
+                              content: "Photo status from suppressed user.",
+                              attachment: [
+                                MediaAttachmentDto(mediaType: "image/png",
+                                                   url: externalImageUrl,
+                                                   name: "Suppressed image",
+                                                   blurhash: "LEHV6nWB2yk8pyo0adR*.7kCMdnj",
+                                                   width: 1706,
+                                                   height: 882,
+                                                   hdrImageUrl: nil,
+                                                   exif: nil,
+                                                   exifData: nil,
+                                                   location: nil)
+                              ],
+                              tag: nil)
+
+        let activity = ActivityDto(context: .single(ContextDto(value: "https://www.w3.org/ns/activitystreams")),
+                                   type: .create,
+                                   id: "\(noteId)/activity",
+                                   actor: .single(ActorDto(id: sourceUser.activityPubProfile)),
+                                   to: noteDto.to,
+                                   cc: noteDto.cc,
+                                   object: .single(ObjectDto(id: noteDto.id, type: .note, object: noteDto)),
+                                   summary: nil,
+                                   signature: nil,
+                                   published: noteDto.published)
+
+        let request = ActivityPubRequestDto(activity: activity,
+                                            headers: [:],
+                                            bodyHash: nil,
+                                            bodyValue: "{}",
+                                            httpMethod: .post,
+                                            httpPath: .userInbox(recipientUser.userName),
+                                            receivedAt: Date.now)
+
+        // Act.
+        try await activityPubIncomingService.create(activityPubRequest: request, on: queueContext.executionContext)
+
+        // Assert.
+        let status = try await Status.query(on: application.db)
+            .filter(\.$activityPubId == noteId)
+            .first()
+
+        #expect(status == nil, "Photo status from suppressed user should not be created.")
+    }
+
+    @Test
     func `Followers create delivered to user inbox should stay followers-only`() async throws {
         // Arrange.
         let activityPubIncomingService = ActivityPubIncomingService()
@@ -109,7 +269,7 @@ struct ActivityPubIncomingServiceCreateTests {
                                                               note: "Parent for mentioned-only comment",
                                                               attachmentIds: [attachment.stringId()!])
 
-        let noteId = "https://remote.example/statuses/mentioned-only-create-1"
+        let noteId = sourceUser.activityPubProfile + "/statuses/mentioned-only-create-1"
         let noteDto = NoteDto(id: noteId,
                               summary: nil,
                               inReplyTo: parentStatus.activityPubId,
@@ -156,7 +316,8 @@ struct ActivityPubIncomingServiceCreateTests {
 
         let createdStatus = try #require(status)
         #expect(createdStatus.visibility == .mentioned, "Status visibility should be mentioned.")
-        #expect(createdStatus.$replyToStatus.id == parentStatus.id, "Comment should be linked to parent status.")
+        #expect(createdStatus.$replyToStatus.id == nil, "A private reply must not attach to the public thread.")
+        #expect(createdStatus.$directConversation.id != nil)
     }
 
     @Test
@@ -324,5 +485,75 @@ struct ActivityPubIncomingServiceCreateTests {
             .with(\.$smallFile)
             .all()
         application.clearFiles(attachments: attachments)
+    }
+
+    @Test
+    func `Unsupported object type with image should not be created as status`() async throws {
+        // Arrange.
+        let activityPubIncomingService = ActivityPubIncomingService()
+        let queueContext = application.getQueueContext(queueName: QueueName(string: "ActivityPubUserInboxJob"))
+
+        let sourceUser = try await application.createUser(userName: "remoteunsupportedcreate", isLocal: false)
+        let recipientUser = try await application.createUser(userName: "unsupportedrecipient")
+        _ = try await application.createFollow(sourceId: recipientUser.requireID(), targetId: sourceUser.requireID(), approved: true)
+
+        let objectId = "https://remote.example/videos/unsupported-create-1"
+        let noteDto = NoteDto(id: objectId,
+                              type: "Video",
+                              summary: nil,
+                              inReplyTo: nil,
+                              published: Date().toISO8601String(),
+                              updated: nil,
+                              url: objectId,
+                              attributedTo: sourceUser.activityPubProfile,
+                              to: .single(ActorDto(id: "https://www.w3.org/ns/activitystreams#Public")),
+                              cc: nil,
+                              sensitive: false,
+                              atomUri: nil,
+                              inReplyToAtomUri: nil,
+                              conversation: nil,
+                              content: "Unsupported video object.",
+                              attachment: [
+                                MediaAttachmentDto(mediaType: "image/png",
+                                                   url: externalImageUrl,
+                                                   name: "Video preview",
+                                                   blurhash: nil,
+                                                   width: 1706,
+                                                   height: 882,
+                                                   hdrImageUrl: nil,
+                                                   exif: nil,
+                                                   exifData: nil,
+                                                   location: nil)
+                              ],
+                              tag: nil)
+
+        let activity = ActivityDto(context: .single(ContextDto(value: "https://www.w3.org/ns/activitystreams")),
+                                   type: .create,
+                                   id: "\(objectId)/activity",
+                                   actor: .single(ActorDto(id: sourceUser.activityPubProfile)),
+                                   to: noteDto.to,
+                                   cc: noteDto.cc,
+                                   object: .single(ObjectDto(id: noteDto.id, type: .note, object: noteDto)),
+                                   summary: nil,
+                                   signature: nil,
+                                   published: noteDto.published)
+
+        let request = ActivityPubRequestDto(activity: activity,
+                                            headers: [:],
+                                            bodyHash: nil,
+                                            bodyValue: "{}",
+                                            httpMethod: .post,
+                                            httpPath: .userInbox(recipientUser.userName),
+                                            receivedAt: Date.now)
+
+        // Act.
+        try await activityPubIncomingService.create(activityPubRequest: request, on: queueContext.executionContext)
+
+        // Assert.
+        let status = try await Status.query(on: application.db)
+            .filter(\.$activityPubId == objectId)
+            .first()
+
+        #expect(status == nil, "Unsupported ActivityStreams object should not be created even when it has an image attachment.")
     }
 }

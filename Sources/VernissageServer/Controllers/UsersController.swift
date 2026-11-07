@@ -117,6 +117,22 @@ extension UsersController: RouteCollection {
 
         usersGroup
             .grouped(UserPayload.guardMiddleware())
+            .grouped(UserPayload.guardIsModeratorMiddleware())
+            .grouped(XsrfTokenValidatorMiddleware())
+            .grouped(EventHandlerMiddleware(.usersSuppress))
+            .grouped(CacheControlMiddleware(.noStore))
+            .post(":name", "suppress", use: suppress)
+
+        usersGroup
+            .grouped(UserPayload.guardMiddleware())
+            .grouped(UserPayload.guardIsModeratorMiddleware())
+            .grouped(XsrfTokenValidatorMiddleware())
+            .grouped(EventHandlerMiddleware(.usersUnsuppress))
+            .grouped(CacheControlMiddleware(.noStore))
+            .post(":name", "unsuppress", use: unsuppress)
+
+        usersGroup
+            .grouped(UserPayload.guardMiddleware())
             .grouped(XsrfTokenValidatorMiddleware())
             .grouped(EventHandlerMiddleware(.usersBlock))
             .grouped(CacheControlMiddleware(.noStore))
@@ -235,6 +251,7 @@ struct UsersController {
     /// - `query` - search query used to filter
     /// - `onlyLocal` - show only local users
     /// - `onlyBlocked` - show only blocked users
+    /// - `onlySuppressed` - show only suppressed users
     /// - `sortDirection` - direction of sorting (possible values: `ascending` or `descending`)
     /// - `sortColumn` - column used for sorting (possible values: `userName`, `lastLoginDate`, `statusesCount` or `createdAt`)
     ///
@@ -307,6 +324,7 @@ struct UsersController {
         let query: String? = request.query["query"] ?? nil
         let onlyLocal: Bool = request.query["onlyLocal"] ?? false
         let onlyBlocked: Bool = request.query["onlyBlocked"] ?? false
+        let onlySuppressed: Bool = request.query["onlySuppressed"] ?? false
 
         let usersFromDatabaseQueryBuilder = User.query(on: request.db)
             .with(\.$flexiFields)
@@ -333,6 +351,11 @@ struct UsersController {
         if onlyBlocked {
             usersFromDatabaseQueryBuilder
                 .filter(\.$isBlocked == true)
+        }
+
+        if onlySuppressed {
+            usersFromDatabaseQueryBuilder
+                .filter(\.$isSuppressed == true)
         }
 
         // Read sort direction from request query string.
@@ -749,7 +772,7 @@ struct UsersController {
         } else {
             try await request
                 .queues(.userDeleter)
-                .dispatch(UserDeleterJob.self, userFromDb.requireID(), maxRetryCount: 2)
+                .dispatch(UserDeleterJob.self, userFromDb.requireID(), maxRetryCount: 3)
         }
 
         return HTTPStatus.ok
@@ -1414,6 +1437,90 @@ struct UsersController {
         return HTTPStatus.ok
     }
 
+    /// Suppress specific user.
+    ///
+    /// An endpoint to mark a user as suppressed.
+    /// Moderators have access to the endpoint.
+    ///
+    /// > Important: Endpoint URL: `/api/v1/users/:userName/suppress`.
+    ///
+    /// **CURL request:**
+    ///
+    /// ```bash
+    /// curl "https://example.com/api/v1/users/@johndoe/suppress" \
+    /// -X POST \
+    /// -H "Content-Type: application/json" \
+    /// -H "Authorization: Bearer [ACCESS_TOKEN]" \
+    /// ```
+    ///
+    /// - Parameters:
+    ///   - request: The Vapor request to the endpoint.
+    ///
+    /// - Returns: HTTP status code.
+    ///
+    /// - Throws: `EntityNotFoundError.userNotFound` if user not exists.
+    /// - Throws: `UserError.userNameIsRequired` if user name not specified.
+    @Sendable
+    func suppress(request: Request) async throws -> HTTPStatus {
+        let usersService = request.application.services.usersService
+
+        guard let userName = request.parameters.get("name") else {
+            throw UserError.userNameIsRequired
+        }
+
+        let userNameNormalized = userName.deletingPrefix("@").uppercased()
+        guard let user = try await usersService.get(userName: userNameNormalized, on: request.db) else {
+            throw EntityNotFoundError.userNotFound
+        }
+
+        user.isSuppressed = true
+        try await user.save(on: request.db)
+
+        return HTTPStatus.ok
+    }
+
+    /// Unsuppress specific user.
+    ///
+    /// An endpoint to remove the suppressed marker from a user.
+    /// Moderators have access to the endpoint.
+    ///
+    /// > Important: Endpoint URL: `/api/v1/users/:userName/unsuppress`.
+    ///
+    /// **CURL request:**
+    ///
+    /// ```bash
+    /// curl "https://example.com/api/v1/users/@johndoe/unsuppress" \
+    /// -X POST \
+    /// -H "Content-Type: application/json" \
+    /// -H "Authorization: Bearer [ACCESS_TOKEN]" \
+    /// ```
+    ///
+    /// - Parameters:
+    ///   - request: The Vapor request to the endpoint.
+    ///
+    /// - Returns: HTTP status code.
+    ///
+    /// - Throws: `EntityNotFoundError.userNotFound` if user not exists.
+    /// - Throws: `UserError.userNameIsRequired` if user name not specified.
+    @Sendable
+    func unsuppress(request: Request) async throws -> HTTPStatus {
+        let usersService = request.application.services.usersService
+
+        guard let userName = request.parameters.get("name") else {
+            throw UserError.userNameIsRequired
+        }
+
+        let userNameNormalized = userName.deletingPrefix("@").uppercased()
+        guard let user = try await usersService.get(userName: userNameNormalized, on: request.db) else {
+            throw EntityNotFoundError.userNotFound
+        }
+
+        user.isSuppressed = false
+        try await user.save(on: request.db)
+
+        return HTTPStatus.ok
+    }
+
     /// Block specific user.
     ///
     /// An endpoint to block a user's account.
@@ -2040,7 +2147,7 @@ struct UsersController {
         }
 
         if authorizationPayloadId == userId {
-            // For signed in users we have to show all kind of statuses on their own profiles (public/followers/mentioned).
+            // Own profiles include public, quiet public and followers-only statuses.
             let linkableStatuses = try await usersService.ownStatuses(for: userId,
                                                                       linkableParams: linkableParams,
                                                                       onlyPinned: onlyPinned,

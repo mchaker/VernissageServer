@@ -8,6 +8,7 @@ import Vapor
 import Fluent
 import Queues
 import ActivityPubKit
+import SQLKit
 
 extension Application.Services {
     struct ActivityPubIncomingServiceKey: StorageKey {
@@ -173,7 +174,13 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
 
         let objects = activityPubRequest.activity.object.objects()
         for object in objects {
-            switch object.type {
+            // Delete may carry only the object's URI. Resolve an existing status before considering user deletion.
+            let isStatusURI = object.type == nil
+                ? try await Status.query(on: context.db)
+                    .filter(\.$activityPubId == object.id)
+                    .count() > 0 : false
+
+            switch isStatusURI ? .note : object.type {
             case .note, .tombstone:
                 context.logger.info("Deleting status: '\(object.id)'.")
                 guard let statusToDelete = try await statusesService.get(activityPubId: object.id, on: context.db) else {
@@ -191,13 +198,15 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
 
                 let actorId = activityPubRequest.activity.actor.actorIds().first
                 let statusOwnerActivityPubProfile = statusToDelete.user.activityPubProfile
-                guard actorId == statusOwnerActivityPubProfile else {
+
+                guard activityPubRequest.activity.actor.actorIds().count == 1,
+                      actorId == statusOwnerActivityPubProfile else {
                     context.logger.warning("Cannot delete status because activity actor doesn't match status owner (activity: \(activityPubRequest.activity.id), actor: \(actorId ?? "<unknown>"), status: \(object.id), owner: \(statusOwnerActivityPubProfile)).")
                     continue
                 }
 
                 // Signature verified, we can delete status.
-                try await statusesService.delete(id: statusToDelete.requireID(), on: context.application.db)
+                try await statusesService.delete(id: statusToDelete.requireID(), on: context)
                 context.logger.info("Deleting status: '\(object.id)'. Status deleted from local database successfully.")
             case .person, .service, .none:
                 context.logger.info("Deleting user: '\(object.id)'.")
@@ -227,8 +236,7 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
             case .profile:
                 context.logger.info("Ignoring delete object of type 'Profile' (object: '\(object.id)').")
             default:
-                context.logger.warning("Deleting object type: '\(object.type?.rawValue ?? "<unknown>")' is not supported yet.",
-                                       metadata: [Constants.requestMetadata: activityPubRequest.bodyValue.loggerMetadata()])
+                context.logger.warning("Deleting object type: '\(object.type?.rawValue ?? "<unknown>")' is not supported yet.")
             }
         }
     }
@@ -248,19 +256,70 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
                     continue
                 }
 
+                guard noteDto.type == "Note" else {
+                    context.logger.warning("Object type '\(noteDto.type)' is not supported (status: \(noteDto.id), activity: \(activity.id)).")
+                    continue
+                }
+
                 guard let activityPubProfile = activity.actor.actorIds().first else {
                     context.logger.warning("Cannot find any ActivityPub actor profile id (activity: \(activity.id)).")
                     continue
                 }
 
+                let shouldSuppressStatus = try await self.shouldSuppressStatus(noteDto: noteDto,
+                                                                               activity: activity,
+                                                                               activityPubProfile: activityPubProfile,
+                                                                               on: context)
+                if shouldSuppressStatus {
+                    context.logger.warning("Status from suppressed user '\(activityPubProfile)' will not be added to the system (activity: \(activity.id)).")
+                    return
+                }
+
                 // Determine whether the incoming status is public, quiet public, followers-only, or mentioned.
                 let statusVisibility = self.resolveStatusVisibility(noteDto: noteDto, activity: activity)
+
+                // Create cannot resurrect a deleted private object or change a stored private message into a public post.
+                if statusVisibility != .mentioned {
+                    let existing = try await Status.query(on: context.db)
+                        .filter(\.$activityPubId == noteDto.id)
+                        .first()
+
+                    let deleted = try await DeletedDirectMessage.query(on: context.db)
+                        .filter(\.$activityPubId == noteDto.id)
+                        .first()
+
+                    if existing?.$directConversation.id != nil || deleted != nil {
+                        continue
+                    }
+                }
 
                 // Detect the local user targeted by this inbox endpoint when the activity came via /actors/:name/inbox.
                 let userInboxRecipientId = try await self.userInboxRecipientId(for: activityPubRequest.httpPath, on: context)
 
                 // Collect all local users explicitly addressed in to/cc so we can validate and route mentioned/direct statuses.
                 let localRecipientUserIds = try await self.localRecipientUserIds(noteDto: noteDto, activity: activity, on: context)
+
+                // Private messages use per-message addressing and conversation inboxes, including text-only notes.
+                // Signature validation has already run in the shared/user inbox job.
+                if statusVisibility == .mentioned {
+                    // An unknown personal inbox must not be treated as a shared inbox.
+                    switch activityPubRequest.httpPath {
+                    case .userInbox, .applicationUserInbox:
+                        guard userInboxRecipientId != nil else {
+                            continue
+                        }
+                    default:
+                        break
+                    }
+
+                    let activityPubDirectMessagesService = context.services.activityPubDirectMessagesService
+                    try await activityPubDirectMessagesService.receive(note: noteDto,
+                                                                       activity: activity,
+                                                                       inboxRecipientId: userInboxRecipientId,
+                                                                       on: context)
+
+                    continue
+                }
 
                 // Validations for regular status (with images).
                 if noteDto.isComment() == false {
@@ -298,6 +357,11 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
                 // Get parent status from database (when inReplyTo is set).
                 let parentStatusFromDatabase = try await self.getParentStatusInDatabase(replyToActivityPubId: noteDto.inReplyTo, on: context)
 
+                // A public/followers Create must not enter a private conversation through the ordinary comment path.
+                if parentStatusFromDatabase?.$directConversation.id != nil {
+                    continue
+                }
+
                 // Validation for statuses which are comments to other statuses.
                 if noteDto.isComment() == true {
                     // Prevent creating new statuses (comments) whene there is no commented (parent) status.
@@ -326,7 +390,7 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
                     }
 
                     // Get main status (from chain of comments).
-                    if let mainStatus = try await statusesService.getMainStatus(for: parentStatusFromDatabase.requireID(), on: context.db) {
+                    if let mainStatus = try await statusesService.getMainStatus(for: parentStatusFromDatabase.requireID(), on: context) {
                         // We have to check if the author of main status doesn't block the user.
                         let isUserBlockedByStatusAuthor = try await userBlockedUsersService.exists(userId: mainStatus.$user.id,
                                                                                                    blockedUserId: user.requireID(),
@@ -367,13 +431,13 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
                     // Consume this kind of error (it’s not a real error - we cannot create comment to not exists status).
                 }
             default:
-                context.logger.warning("Object type: '\(object.type?.rawValue ?? "<unknown>")' is not supported yet.",
-                                       metadata: [Constants.requestMetadata: activityPubRequest.bodyValue.loggerMetadata()])
+                context.logger.warning("Object type: '\(object.type?.rawValue ?? "<unknown>")' is not supported yet.")
             }
         }
     }
 
     public func update(activityPubRequest: ActivityPubRequestDto, on context: ExecutionContext) async throws {
+        let activityPubDirectMessagesService = context.services.activityPubDirectMessagesService
         let statusesService = context.services.statusesService
         let usersService = context.services.usersService
         let activity = activityPubRequest.activity
@@ -389,6 +453,12 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
 
                 guard let orginalStatus = try await statusesService.get(activityPubId: noteDto.id, on: context.db) else {
                     context.logger.warning("Cannot update status because status doesn't exist in local database (activity: \(noteDto.id)).")
+                    continue
+                }
+
+                // Private edits preserve the original audience and synchronize only affected inbox previews.
+                if orginalStatus.$directConversation.id != nil {
+                    try await activityPubDirectMessagesService.update(note: noteDto, activity: activity, on: context)
                     continue
                 }
 
@@ -441,8 +511,7 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
             case .profile:
                 context.logger.info("Ignoring update object of type 'Profile' (activity: \(activity.id), object: \(object.id)).")
             default:
-                context.logger.warning("Object type: '\(object.type?.rawValue ?? "<unknown>")' is not supported yet for update.",
-                                       metadata: [Constants.requestMetadata: activityPubRequest.bodyValue.loggerMetadata()])
+                context.logger.warning("Object type: '\(object.type?.rawValue ?? "<unknown>")' is not supported yet for update.")
             }
         }
     }
@@ -567,9 +636,23 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
 
                     return true
                 }
+
+            case .none:
+
+                // A compact Undo contains only the original activity URI, without its type.
+                // Matching that URI to a stored favourite owned by the Undo actor identifies it as a Like.
+                // object.id refers to the Like activity, not to the status that was liked.
+                if let actorId = activity.actor.actorIds().first,
+                   let user = try await usersService.get(activityPubProfile: actorId, on: context.db),
+                   let favourite = try await StatusFavourite.query(on: context.db)
+                    .filter(\.$activityPubId == object.id)
+                    .filter(\.$user.$id == user.requireID())
+                    .with(\.$status)
+                    .first(), favourite.status.$directConversation.id != nil {
+                    return true
+                }
             default:
-                context.logger.warning("Undo of '\(object.type?.rawValue ?? "<unknown>")' action is not supported yet",
-                                       metadata: [Constants.requestMetadata: activityPubRequest.bodyValue.loggerMetadata()])
+                context.logger.warning("Undo of '\(object.type?.rawValue ?? "<unknown>")' action is not supported yet")
                 return false
             }
         }
@@ -581,7 +664,7 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
         let activity = activityPubRequest.activity
         let objects = activity.object.objects()
 
-        guard let sourceActorId = activity.actor.actorIds().first else {
+        guard activity.actor.actorIds().count == 1, let sourceActorId = activity.actor.actorIds().first else {
             return
         }
 
@@ -593,9 +676,20 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
                 try await self.unannounce(sourceActorId: sourceActorId, activityPubObject: object, on: context)
             case .like:
                 try await self.unlike(sourceActorId: sourceActorId, activityPubObject: object, on: context)
+            case .none:
+
+                // Compact Undo can reference only the original Like URI; its actor is resolved from stored metadata.
+                if let user = try await context.services.usersService.get(activityPubProfile: sourceActorId, on: context.db),
+                   let favourite = try await StatusFavourite.query(on: context.db)
+                    .filter(\.$activityPubId == object.id)
+                    .filter(\.$user.$id == user.requireID())
+                    .with(\.$status)
+                    .first(), favourite.status.$directConversation.id != nil {
+                    try await self.receiveDirectMessageReaction(statusId: favourite.$status.id, actor: user,
+                                                               activityPubId: object.id, undo: true, on: context)
+                }
             default:
-                context.logger.warning("Undo of '\(object.type?.rawValue ?? "<unknown>")' action is not supported yet",
-                                       metadata: [Constants.requestMetadata: activityPubRequest.bodyValue.loggerMetadata()])
+                context.logger.warning("Undo of '\(object.type?.rawValue ?? "<unknown>")' action is not supported yet")
             }
         }
     }
@@ -617,8 +711,22 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
         let objects = activity.object.objects()
         for object in objects {
             // Statuses favourited by remote users have to exists in the local database.
-            guard let status = try await statusesService.get(activityPubId: object.id, on: context.db) else {
+            guard let requestedStatus = try await statusesService.get(activityPubId: object.id, on: context.db),
+                  let status = try await statusesService.getOrginalStatus(id: requestedStatus.requireID(), on: context.db) else {
                 context.logger.info("Status '\(object.id)' not exists in local database. Thus cannot be favourited by user '\(remoteUserId)'.")
+                continue
+            }
+
+            if status.$directConversation.id != nil {
+                guard activity.actor.actorIds().count == 1 else {
+                    continue
+                }
+
+                try await self.receiveDirectMessageReaction(statusId: status.requireID(),
+                                                            actor: remoteUser,
+                                                            activityPubId: activity.id,
+                                                            undo: false,
+                                                            on: context)
                 continue
             }
 
@@ -650,7 +758,7 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
 
             if let targetUser = try await usersService.get(id: targetUserId, on: context.db) {
                 // We have to download ancestors when favourited is comment (in notifications screen we can show main photo which is favourited).
-                let ancestors = try await statusesService.ancestors(for: statusId, on: context.db)
+                let ancestors = try await statusesService.ancestors(for: statusId, on: context)
 
                 // Create notification.
                 try await notificationsService.create(type: .favourite,
@@ -665,16 +773,20 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
 
     private func unlike(sourceActorId: String, activityPubObject: ObjectDto, on context: ExecutionContext) async throws {
         guard let announceDto = activityPubObject.object as? LikeDto,
+              announceDto.actor == nil || announceDto.actor?.actorIds() == [sourceActorId],
               let objects = announceDto.object?.objects() else {
             return
         }
 
         for object in objects {
-            try await self.unlike(sourceProfileUrl: sourceActorId, activityPubObject: object, on: context)
+            try await self.unlike(sourceProfileUrl: sourceActorId,
+                                  activityPubObject: object,
+                                  likeActivityPubId: announceDto.id,
+                                  on: context)
         }
     }
 
-    private func unlike(sourceProfileUrl: String, activityPubObject: ObjectDto, on context: ExecutionContext) async throws {
+    private func unlike(sourceProfileUrl: String, activityPubObject: ObjectDto, likeActivityPubId: String, on context: ExecutionContext) async throws {
         context.logger.info("Unliking status: '\(activityPubObject.id)' by account '\(sourceProfileUrl)' (from remote server).")
         let statusesService = context.services.statusesService
         let usersService = context.services.usersService
@@ -684,8 +796,19 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
             return
         }
 
-        guard let status = try await statusesService.get(activityPubId: activityPubObject.id, on: context.db) else {
+        guard let requestedStatus = try await statusesService.get(activityPubId: activityPubObject.id, on: context.db),
+              let status = try await statusesService.getOrginalStatus(id: requestedStatus.requireID(), on: context.db) else {
             context.logger.warning("Cannot find orginal status '\(activityPubObject.id)' in local database.")
+            return
+        }
+
+        if status.$directConversation.id != nil {
+            try await self.receiveDirectMessageReaction(statusId: status.requireID(),
+                                                        actor: user,
+                                                        activityPubId: likeActivityPubId,
+                                                        undo: true,
+                                                        on: context)
+
             return
         }
 
@@ -735,6 +858,11 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
             return
         }
 
+        if remoteUser.isSuppressed {
+            context.logger.warning("Boost from suppressed user '\(actorActivityPubId)' will not be added to the system (activity: \(activity.id)).")
+            return
+        }
+
         for object in objects {
             // Check if announced object is from instance blocked domain.
             if try await instanceBlockedDomainsService.isDomainBlockedByInstance(activityPubId: object.id, on: context) {
@@ -742,16 +870,26 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
                 continue
             }
 
+            if try await self.isOwnerSuppressed(of: object, on: context) {
+                context.logger.warning("Boosted status '\(object.id)' belongs to a suppressed user and will not be added to the system (activity: \(activity.id)).")
+                continue
+            }
+
             // Create (or get from local database) main status in local database.
             let downloadedStatus = try await self.downloadStatusSuppressingErrors(activityPubId: object.id, on: context)
             guard let downloadedStatus else {
-                context.logger.warning("Boosted status '\(object.id)' has not been downloaded because it's not an image (activity: \(activity.id)).")
+                context.logger.warning("Boosted status '\(object.id)' has not been added to the system (activity: \(activity.id)).")
                 continue
             }
 
             // Get full status from database.
             guard let mainStatusFromDatabase = try await statusesService.getOrginalStatus(id: downloadedStatus.requireID(), on: context.db) else {
                 context.logger.warning("Boosted status '\(object.id)' has not been downloaded successfully (activity: \(activity.id)).")
+                continue
+            }
+
+            // A received private message must never be exposed by a public Announce.
+            guard mainStatusFromDatabase.$directConversation.id == nil, mainStatusFromDatabase.visibility != .mentioned else {
                 continue
             }
 
@@ -814,6 +952,15 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
         }
     }
 
+    private func isOwnerSuppressed(of object: ObjectDto, on context: ExecutionContext) async throws -> Bool {
+        guard let noteDto = object.object as? NoteDto,
+              let user = try await context.services.usersService.get(activityPubProfile: noteDto.attributedTo, on: context.db) else {
+            return false
+        }
+
+        return user.isSuppressed
+    }
+
     public func flag(activityPubRequest: ActivityPubRequestDto, on context: ExecutionContext) async throws {
         let activity = activityPubRequest.activity
         let statusesService = context.services.statusesService
@@ -846,7 +993,7 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
         }
 
         let reportedStatusId = try reportedStatus?.requireID()
-        let mainStatus = try await statusesService.getMainStatus(for: reportedStatusId, on: context.db)
+        let mainStatus = try await statusesService.getMainStatus(for: reportedStatusId, on: context)
         let reportId = context.services.snowflakeService.generate()
 
         let report = Report(id: reportId,
@@ -881,8 +1028,12 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
             return downloadedStatus
         } catch ActivityPubError.missingSupportedImageAttachments {
             // Consume this kind of error (it’s not a real error - statuses without images are simply not supported).
+        } catch ActivityPubError.statusTypeNotSupported {
+            // Consume this kind of error (unsupported ActivityStreams object types are intentionally ignored).
         } catch StatusError.cannotAddCommentWithoutCommentedStatus {
             // Consume this kind of error (it’s not a real error - we cannot create comment to not exists status).
+        } catch ActivityPubError.actorIsSuppressedByInstance {
+            // Consume this kind of error (status belongs to an intentionally suppressed actor).
         }
 
         return nil
@@ -955,7 +1106,8 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
             return
         }
 
-        guard let orginalStatus = try await statusesService.get(activityPubId: activityPubObject.id, on: context.db) else {
+        guard let requestedStatus = try await statusesService.get(activityPubId: activityPubObject.id, on: context.db),
+              let orginalStatus = try await statusesService.getOrginalStatus(id: requestedStatus.requireID(), on: context.db) else {
             context.logger.warning("Cannot find orginal status '\(activityPubObject.id)' in local database.")
             return
         }
@@ -973,7 +1125,7 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
 
         let statusId = try status.requireID()
         context.logger.info("Deleting status '\(statusId)' (reblog) from local database.")
-        try await statusesService.delete(id: statusId, on: context.db)
+        try await statusesService.delete(id: statusId, on: context)
 
         context.logger.info("Recalculating reblogs for orginal status '\(orginalStatusId)' in local database.")
         try await statusesService.updateReblogsCount(for: orginalStatusId, on: context.db)
@@ -1230,10 +1382,31 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
         return followers > 0
     }
 
+    private func shouldSuppressStatus(noteDto: NoteDto,
+                                      activity: ActivityDto,
+                                      activityPubProfile: String,
+                                      on context: ExecutionContext) async throws -> Bool {
+        guard activity.type == .create,
+              noteDto.type == "Note",
+              noteDto.isComment() == false,
+              let attachments = noteDto.attachment,
+              attachments.isEmpty == false,
+              attachments.hasSupportedImages() else {
+            return false
+        }
+
+        let usersService = context.services.usersService
+        let user = try await usersService.get(activityPubProfile: activityPubProfile, on: context.db)
+        return user?.isSuppressed == true
+    }
+
     private func resolveStatusVisibility(noteDto: NoteDto, activity: ActivityDto) -> StatusVisibility {
         let publicAddress = "https://www.w3.org/ns/activitystreams#Public"
-        let toActorIds = noteDto.to?.actorIds() ?? activity.to?.actorIds() ?? []
-        let ccActorIds = noteDto.cc?.actorIds() ?? activity.cc?.actorIds() ?? []
+
+        // When the object provides addressing, the envelope must not widen its audience.
+        let hasObjectAddressing = noteDto.to != nil || noteDto.cc != nil
+        let toActorIds = hasObjectAddressing ? (noteDto.to?.actorIds() ?? []) : (activity.to?.actorIds() ?? [])
+        let ccActorIds = hasObjectAddressing ? (noteDto.cc?.actorIds() ?? []) : (activity.cc?.actorIds() ?? [])
         let allActorIds = toActorIds + ccActorIds
 
         // Public in "to" means fully public post visible to everyone.
@@ -1393,7 +1566,120 @@ final class ActivityPubIncomingService: ActivityPubIncomingServiceType {
             return nil
         }
 
-        return status
+        return try await statusesService.getOrginalStatus(id: status.requireID(), on: context.db)
+    }
+
+    /// Serializes duplicate Like/Undo deliveries against deletion, and keeps notification dispatch outside the transaction.
+    /// The remote actor must have per-message access; conversation membership alone never grants permission.
+    private func receiveDirectMessageReaction(statusId: Int64,
+                                              actor: User,
+                                              activityPubId: String,
+                                              undo: Bool,
+                                              on context: ExecutionContext) async throws {
+        let notification = try await context.db.transaction { database -> Notification? in
+            let transactionalContext = context.with(transaction: database)
+
+            guard let sql = database as? SQLDatabase else {
+                throw Abort(.internalServerError, reason: "Private reactions require a SQL database.")
+            }
+
+            // Acquire the first write before reading to serialize duplicate deliveries on SQLite and PostgreSQL.
+            try await sql.raw("""
+                UPDATE \(ident: Status.schema) SET \(ident: "favouritesCount") = \(ident: "favouritesCount")
+                WHERE \(ident: "id") = \(bind: statusId)
+                """).run()
+
+            guard let status = try await context.services.statusesService.get(id: statusId, on: database),
+                  status.$directConversation.id != nil,
+                  let user = try await User.find(actor.requireID(), on: database), user.isLocal == false,
+                  user.isBlocked == false, user.isSuppressed == false,
+                  try await context.services.statusesService.can(view: status, userId: user.requireID(), on: transactionalContext) else {
+                return nil
+            }
+
+            let userId = try user.requireID()
+            let authorId = status.$user.id
+            let blocked = try await UserBlockedUser.query(on: database)
+                .group(.or) { group in
+                    group.group(.and) {
+                        $0.filter(\.$user.$id == authorId)
+                            .filter(\.$blockedUser.$id == userId)
+                    }
+
+                    group.group(.and) {
+                        $0.filter(\.$user.$id == userId)
+                            .filter(\.$blockedUser.$id == authorId)
+                    }
+                }
+                .count() > 0
+
+            let domainBlocked = try await context.services.userBlockedDomainsService.isDomainBlockedByUser(
+                userId: authorId, actorId: user.activityPubProfile, on: transactionalContext)
+
+            guard blocked == false, domainBlocked == false else {
+                return nil
+            }
+
+            let existing = try await StatusFavourite.query(on: database)
+                .filter(\.$status.$id == statusId)
+                .filter(\.$user.$id == userId)
+                .first()
+
+            // Receipts outlive the favourite, preventing replayed Like activities from restoring an undone reaction.
+            let receipt = try await DirectMessageLikeReceipt.query(on: database)
+                .filter(\.$status.$id == statusId)
+                .filter(\.$user.$id == userId)
+                .filter(\.$activityPubId == activityPubId)
+                .first()
+
+            // Record Undo even when Like has not arrived yet, so out-of-order delivery cannot recreate it.
+            if let receipt {
+                guard undo else {
+                    return nil
+                }
+
+                receipt.isUndone = true
+                try await receipt.save(on: database)
+            } else {
+                let receipt = DirectMessageLikeReceipt(id: context.services.snowflakeService.generate(),
+                    statusId: statusId, userId: userId, activityPubId: activityPubId, isUndone: undo)
+                try await receipt.create(on: database)
+            }
+
+            if undo {
+                // A delayed Undo for an older Like must not remove a subsequent re-like.
+                guard let existing, existing.activityPubId == activityPubId else {
+                    return nil
+                }
+
+                try await existing.delete(on: database)
+                try await context.services.statusesService.updateFavouritesCount(for: statusId, on: database)
+                try await context.services.notificationsService.delete(type: .favourite, to: authorId,
+                    by: userId, statusId: statusId, on: database)
+
+                return nil
+            }
+
+            guard existing == nil else {
+                return nil
+            }
+
+            let favourite = StatusFavourite(id: context.services.snowflakeService.generate(), statusId: statusId,
+                                            userId: userId, activityPubId: activityPubId)
+            try await favourite.create(on: database)
+            try await context.services.statusesService.updateFavouritesCount(for: statusId, on: database)
+
+            guard authorId != userId else {
+                return nil
+            }
+
+            return try await context.services.notificationsService.createStored(type: .favourite, to: status.user,
+                by: userId, statusId: statusId, mainStatusId: nil, on: transactionalContext)
+        }
+
+        if let notification {
+            await context.services.directMessagesService.dispatchNotifications([notification], on: context)
+        }
     }
 
     private func isLocalObjectOnTheList(objects: [ObjectDto], baseAddress: String) -> Bool {

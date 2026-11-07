@@ -329,7 +329,10 @@ struct StatusesController {
     /// - `public` - status visible for all users
     /// - `quietPublic` - status visible only on user's profile (not federated)
     /// - `followers` - status visible only for followers
-    /// - `mentioned` - status visible only for mentioned users
+    ///
+    /// `mentioned` visibility and replies to direct messages are rejected with 400 (Bad Request).
+    /// Send direct messages, including messages with attachments, through `/api/v1/direct-messages`.
+    /// Send replies through `/api/v1/direct-messages/:id/statuses`.
     ///
     /// Tip for import statuses:
     ///
@@ -457,6 +460,7 @@ struct StatusesController {
     ///
     /// - Returns: Information about newly added status.
     ///
+    /// - Throws: `StatusError.directMessagesRequireDedicatedEndpoint` (400) for mentioned visibility or a direct-message parent.
     /// - Throws: `Validation.validationError` if validation errors occurs.
     /// - Throws: `EntityNotFoundError.userNotFound` if user not exists.
     /// - Throws: `StatusError.emailNotVerified` if user email has not been verified.
@@ -486,6 +490,8 @@ struct StatusesController {
         
         try StatusRequestDto.validate(content: request)
         let statusRequestDto = try request.content.decode(StatusRequestDto.self)
+
+        try await self.validateStandardStatusRequest(statusRequestDto, on: request)
         
         // Attachments can be ommited only for statused added as a comment to other status.
         if statusRequestDto.attachmentIds.count == 0 {
@@ -522,7 +528,7 @@ struct StatusesController {
         if isSilent == false, let statusId = statusFromDatabase.id {
             try await request
                 .queues(.statusSender)
-                .dispatch(StatusCreaterJob.self, statusId, maxRetryCount: 2)
+                .dispatch(StatusCreaterJob.self, statusId, maxRetryCount: 3)
         }
         
         // Prepare and return status.
@@ -713,8 +719,12 @@ struct StatusesController {
     /// Visibility is one of following value:
     ///
     /// - `public` - status visible for all users
+    /// - `quietPublic` - status visible only on user's profile (not federated)
     /// - `followers` - status visible only for followers
-    /// - `mentioned` - status visible only for mentioned users
+    ///
+    /// `mentioned` visibility and replies to direct messages are rejected with 400 (Bad Request).
+    /// Send direct messages, including messages with attachments, through `/api/v1/direct-messages`.
+    /// Send replies through `/api/v1/direct-messages/:id/statuses`.
     ///
     /// > Important: Endpoint URL: `/api/v1/statuses/:id`.
     ///
@@ -828,6 +838,7 @@ struct StatusesController {
     ///
     /// - Returns: Information about updated status.
     ///
+    /// - Throws: `StatusError.directMessagesRequireDedicatedEndpoint` (400) for mentioned visibility or a direct-message parent.
     /// - Throws: `Validation.validationError` if validation errors occurs.
     /// - Throws: `EntityNotFoundError.userNotFound` if user not exists.
     /// - Throws: `StatusError.attachmentsAreRequired` if attachments are misssing.
@@ -856,8 +867,19 @@ struct StatusesController {
             throw StatusError.cannotUpdateOtherUserStatus
         }
         
+        // Direct messages have separate audience and inbox state; photo edits must not publish them.
+        guard status.$directConversation.id == nil else {
+            throw DirectMessageError.unsupportedStatusOperation
+        }
+
+        guard status.$reblog.id == nil else {
+            throw StatusError.cannotUpdateReblog
+        }
+
         try StatusRequestDto.validate(content: request)
         let statusRequestDto = try request.content.decode(StatusRequestDto.self)
+
+        try await self.validateStandardStatusRequest(statusRequestDto, on: request)
         
         // Attachments can be ommited only for statused added as a comment to other status.
         if statusRequestDto.attachmentIds.count == 0 {
@@ -884,7 +906,7 @@ struct StatusesController {
         if let statusId = statusFromDatabase.id {
             try await request
                 .queues(.statusUpdater)
-                .dispatch(StatusUpdaterJob.self, statusId, maxRetryCount: 2)
+                .dispatch(StatusUpdaterJob.self, statusId, maxRetryCount: 3)
         }
         
         // Prepare and return status.
@@ -898,6 +920,12 @@ struct StatusesController {
     ///
     /// This endpoint is used to delete statuses. The status can be deleted by the user
     /// who submitted it or by a moderator or administrator.
+    ///
+    /// Direct messages use this endpoint too. Their status and content are removed, while a content-free
+    /// marker stays in the conversation for the original author and explicit recipients. Replies remain intact.
+    /// Local messages enqueue an ActivityPub Delete addressed only to their original remote recipients.
+    /// Deletion clears an affected inbox preview without changing activity order, read time or mute preference.
+    /// `GET /api/v1/direct-messages/:id/statuses` includes the original message id and `deletedAt`, with no `status`.
     ///
     /// > Important: Endpoint URL: `/api/v1/statuses/:id`.
     ///
@@ -941,17 +969,21 @@ struct StatusesController {
             throw EntityForbiddenError.statusForbidden
         }
         
+        // Capture private addressing before status deletion or concurrent account cleanup removes its source rows.
+        let activityPubOutgoingStatusService = request.application.services.activityPubOutgoingStatusService
+        let deletion: StatusDeleteJobDto? = if status.isLocal {
+            try await activityPubOutgoingStatusService.prepareDeletePayload(status: status, on: request.executionContext)
+        } else {
+            nil
+        }
+
         let statusServices = request.application.services.statusesService
-        try await statusServices.delete(id: statusId, on: request.db)
-                
-        if status.isLocal {
-            let statusDeleteJobDto = try StatusDeleteJobDto(userId: status.user.requireID(),
-                                                        statusId: status.requireID(),
-                                                        activityPubStatusId: status.activityPubId)
-            
+        try await statusServices.delete(id: statusId, on: request.executionContext)
+
+        if let deletion {
             try await request
                 .queues(.statusDeleter)
-                .dispatch(StatusDeleterJob.self, statusDeleteJobDto, maxRetryCount: 2)
+                .dispatch(StatusDeleterJob.self, deletion, maxRetryCount: 3)
         }
 
         return HTTPStatus.ok
@@ -1000,10 +1032,12 @@ struct StatusesController {
         
         // Remove from remote servers.
         if status.isLocal {
-            let statusDeleterJobDto = try StatusDeleteJobDto(userId: status.user.requireID(), statusId: statusId, activityPubStatusId: status.activityPubId)
+            let activityPubOutgoingStatusService = request.application.services.activityPubOutgoingStatusService
+            let statusDeleterJobDto = try await activityPubOutgoingStatusService.prepareDeletePayload(status: status, on: request.executionContext)
+
             try await request
                 .queues(.statusDeleter)
-                .dispatch(StatusDeleterJob.self, statusDeleterJobDto, maxRetryCount: 2)
+                .dispatch(StatusDeleterJob.self, statusDeleterJobDto, maxRetryCount: 3)
         }
         
         return HTTPStatus.ok
@@ -1146,14 +1180,15 @@ struct StatusesController {
             throw StatusError.incorrectStatusId
         }
         
-        guard let statusId = statusIdString.toId() else {
+        guard let requestedStatusId = statusIdString.toId() else {
             throw StatusError.incorrectStatusId
         }
         
         let statusesService = request.application.services.statusesService
-        guard let status = try await statusesService.get(id: statusId, on: request.db) else {
+        guard let status = try await statusesService.getOrginalStatus(id: requestedStatusId, on: request.db) else {
             throw EntityNotFoundError.statusNotFound
         }
+        let statusId = try status.requireID()
         
         // Visible for authorized or public statuses.
         let statusServices = request.application.services.statusesService
@@ -1162,8 +1197,8 @@ struct StatusesController {
             throw request.userId == nil ? Abort(.unauthorized) : EntityForbiddenError.statusForbidden
         }
         
-        let ancestors = try await statusesService.ancestors(for: statusId, on: request.db)
-        let descendants = try await statusesService.descendants(for: statusId, on: request.db)
+        let ancestors = try await statusesService.ancestors(for: statusId, on: request.executionContext)
+        let descendants = try await statusesService.descendants(for: statusId, on: request.executionContext)
         
         let ancestorsDtos = await statusesService.convertToDtos(statuses: ancestors, on: request.executionContext)
         let descendantsDtos = await statusesService.convertToDtos(statuses: descendants, on: request.executionContext)
@@ -1411,16 +1446,17 @@ struct StatusesController {
             throw StatusError.incorrectStatusId
         }
         
-        guard let statusId = statusIdString.toId() else {
+        guard let requestedStatusId = statusIdString.toId() else {
             throw StatusError.incorrectStatusId
         }
         
         // We have to reblog orginal status, even when we get here already reblogged status.
         let statusesService = request.application.services.statusesService
-        let statusFromDatabaseBeforeReblog = try await statusesService.getOrginalStatus(id: statusId, on: request.db)
+        let statusFromDatabaseBeforeReblog = try await statusesService.getOrginalStatus(id: requestedStatusId, on: request.db)
         guard let statusFromDatabaseBeforeReblog else {
             throw EntityNotFoundError.statusNotFound
         }
+        let statusId = try statusFromDatabaseBeforeReblog.requireID()
 
         // We cannot reblogs comments (there is no place wehere we can see them).
         guard statusFromDatabaseBeforeReblog.$replyToStatus.id == nil else {
@@ -1469,7 +1505,7 @@ struct StatusesController {
         
         try await request
             .queues(.statusReblogger)
-            .dispatch(StatusRebloggerJob.self, status.requireID(), maxRetryCount: 2)
+            .dispatch(StatusRebloggerJob.self, status.requireID(), maxRetryCount: 3)
         
         // Prepare and return status.
         let statusFromDatabaseAfterReblog = try await statusesService.get(id: statusId, on: request.db)
@@ -1603,7 +1639,7 @@ struct StatusesController {
         }
         
         // Delete reblog status from database.
-        try await statusesService.delete(id: statusFromDatabaseBeforeUnreblog.requireID(), on: request.db)
+        try await statusesService.delete(id: statusFromDatabaseBeforeUnreblog.requireID(), on: request.executionContext)
         try await statusesService.updateReblogsCount(for: mainStatusId, on: request.db)
         
         // Delete notification about reblog.
@@ -1625,7 +1661,7 @@ struct StatusesController {
         
         try await request
             .queues(.statusUnreblogger)
-            .dispatch(StatusUnrebloggerJob.self, activityPubUnreblogDto, maxRetryCount: 2)
+            .dispatch(StatusUnrebloggerJob.self, activityPubUnreblogDto, maxRetryCount: 3)
         
         // Prepare and return status.
         let statusFromDatabaseAfterUnreblog = try await statusesService.get(id: mainStatusId, on: request.db)
@@ -1705,15 +1741,18 @@ struct StatusesController {
             throw StatusError.incorrectStatusId
         }
         
-        guard let statusId = statusIdString.toId() else {
+        guard let requestedStatusId = statusIdString.toId() else {
             throw StatusError.incorrectStatusId
         }
         
         let statusesService = request.application.services.statusesService
-        let status = try await statusesService.get(id: statusId, on: request.db)
+        guard let status = try await statusesService.getOrginalStatus(id: requestedStatusId, on: request.db) else {
+            throw EntityNotFoundError.statusNotFound
+        }
+        let statusId = try status.requireID()
         
         // Visible for authorized or public statuses.
-        if request.userId == nil && [.public, .quietPublic].contains(status?.visibility) == false {
+        if request.userId == nil && [.public, .quietPublic].contains(status.visibility) == false {
             throw Abort(.unauthorized)
         }
         
@@ -1786,6 +1825,10 @@ struct StatusesController {
     /// }
     /// ```
     ///
+    /// Direct messages use this same endpoint. Only the author and explicit recipients can interact with a message.
+    /// The operation does not mark messages as read or change conversation activity ordering.
+    /// Favourite notifications for direct messages include `conversationId`, omit `mainStatus` and respect conversation mute.
+    ///
     /// - Parameters:
     ///   - request: The Vapor request to the endpoint.
     ///
@@ -1802,15 +1845,16 @@ struct StatusesController {
             throw StatusError.incorrectStatusId
         }
         
-        guard let statusId = statusIdString.toId() else {
+        guard let requestedStatusId = statusIdString.toId() else {
             throw StatusError.incorrectStatusId
         }
         
         let statusesService = request.application.services.statusesService
-        let statusFromDatabaseBeforeFavourite = try await statusesService.get(id: statusId, on: request.db)
+        let statusFromDatabaseBeforeFavourite = try await statusesService.getOrginalStatus(id: requestedStatusId, on: request.db)
         guard let statusFromDatabaseBeforeFavourite else {
             throw EntityNotFoundError.statusNotFound
         }
+        let statusId = try statusFromDatabaseBeforeFavourite.requireID()
         
         // We have to verify if user have access to the status (it's not only for mentioned).
         let canView = try await statusesService.can(view: statusFromDatabaseBeforeFavourite, userId: authorizationPayloadId, on: request.executionContext)
@@ -1829,8 +1873,15 @@ struct StatusesController {
             try await statusFavourite.save(on: request.db)
             try await statusesService.updateFavouritesCount(for: statusId, on: request.db)
             
-            // We have to download ancestors when favourited is comment (in notifications screen we can show main photo which is favourited).
-            let ancestors = try await statusesService.ancestors(for: statusId, on: request.db)
+            // A direct-message favourite must not expose earlier messages through the notification's mainStatus.
+            let mainStatusId: Int64?
+
+            if statusFromDatabaseBeforeFavourite.$directConversation.id != nil {
+                mainStatusId = nil
+            } else {
+                let ancestors = try await statusesService.ancestors(for: statusId, on: request.executionContext)
+                mainStatusId = ancestors.first?.id
+            }
             
             // Add new notification (if user is not an author of the status).
             if authorizationPayloadId != statusFromDatabaseBeforeFavourite.user.id {
@@ -1839,7 +1890,7 @@ struct StatusesController {
                                                       to: statusFromDatabaseBeforeFavourite.user,
                                                       by: authorizationPayloadId,
                                                       statusId: statusId,
-                                                      mainStatusId: ancestors.first?.id,
+                                                      mainStatusId: mainStatusId,
                                                       on: request.executionContext)
             }
             
@@ -1847,7 +1898,7 @@ struct StatusesController {
             if statusFromDatabaseBeforeFavourite.isLocal == false {
                 try await request
                     .queues(.statusFavouriter)
-                    .dispatch(StatusFavouriterJob.self, statusFavourite.requireID(), maxRetryCount: 2)
+                    .dispatch(StatusFavouriterJob.self, statusFavourite.requireID(), maxRetryCount: 3)
             }
         }
         
@@ -1917,6 +1968,9 @@ struct StatusesController {
     /// }
     /// ```
     ///
+    /// Direct messages use this same endpoint. Only the author and explicit recipients can interact with a message.
+    /// The operation does not mark messages as read or change conversation activity ordering.
+    ///
     /// - Parameters:
     ///   - request: The Vapor request to the endpoint.
     ///
@@ -1933,15 +1987,16 @@ struct StatusesController {
             throw StatusError.incorrectStatusId
         }
         
-        guard let statusId = statusIdString.toId() else {
+        guard let requestedStatusId = statusIdString.toId() else {
             throw StatusError.incorrectStatusId
         }
         
         let statusesService = request.application.services.statusesService
-        let statusFromDatabaseBeforeUnfavourite = try await statusesService.get(id: statusId, on: request.db)
+        let statusFromDatabaseBeforeUnfavourite = try await statusesService.getOrginalStatus(id: requestedStatusId, on: request.db)
         guard let statusFromDatabaseBeforeUnfavourite else {
             throw EntityNotFoundError.statusNotFound
         }
+        let statusId = try statusFromDatabaseBeforeUnfavourite.requireID()
         
         // We have to verify if user have access to the status (it's not only for mentioned).
         let canView = try await statusesService.can(view: statusFromDatabaseBeforeUnfavourite, userId: authorizationPayloadId, on: request.executionContext)
@@ -1974,7 +2029,7 @@ struct StatusesController {
 
                 try await request
                     .queues(.statusUnfavouriter)
-                    .dispatch(StatusUnfavouriterJob.self, statusUnfavoriteJobDto, maxRetryCount: 2)
+                    .dispatch(StatusUnfavouriterJob.self, statusUnfavoriteJobDto, maxRetryCount: 3)
             }
         }
         
@@ -2056,15 +2111,18 @@ struct StatusesController {
             throw StatusError.incorrectStatusId
         }
         
-        guard let statusId = statusIdString.toId() else {
+        guard let requestedStatusId = statusIdString.toId() else {
             throw StatusError.incorrectStatusId
         }
         
         let statusesService = request.application.services.statusesService
-        let status = try await statusesService.get(id: statusId, on: request.db)
+        guard let status = try await statusesService.getOrginalStatus(id: requestedStatusId, on: request.db) else {
+            throw EntityNotFoundError.statusNotFound
+        }
+        let statusId = try status.requireID()
         
         // Visible for authorized or public statuses.
-        if request.userId == nil && [.public, .quietPublic].contains(status?.visibility) == false {
+        if request.userId == nil && [.public, .quietPublic].contains(status.visibility) == false {
             throw Abort(.unauthorized)
         }
         
@@ -2184,15 +2242,16 @@ struct StatusesController {
             throw StatusError.incorrectStatusId
         }
         
-        guard let statusId = statusIdString.toId() else {
+        guard let requestedStatusId = statusIdString.toId() else {
             throw StatusError.incorrectStatusId
         }
         
         let statusesService = request.application.services.statusesService
-        let statusFromDatabaseBeforeBookmark = try await statusesService.get(id: statusId, on: request.db)
+        let statusFromDatabaseBeforeBookmark = try await statusesService.getOrginalStatus(id: requestedStatusId, on: request.db)
         guard let statusFromDatabaseBeforeBookmark else {
             throw EntityNotFoundError.statusNotFound
         }
+        let statusId = try statusFromDatabaseBeforeBookmark.requireID()
         
         // We have to verify if user have access to the status (it's not only for mentioned).
         let canView = try await statusesService.can(view: statusFromDatabaseBeforeBookmark, userId: authorizationPayloadId, on: request.executionContext)
@@ -2322,15 +2381,16 @@ struct StatusesController {
             throw StatusError.incorrectStatusId
         }
         
-        guard let statusId = statusIdString.toId() else {
+        guard let requestedStatusId = statusIdString.toId() else {
             throw StatusError.incorrectStatusId
         }
         
         let statusesService = request.application.services.statusesService
-        let statusFromDatabaseBeforeUnbookmark = try await statusesService.get(id: statusId, on: request.db)
+        let statusFromDatabaseBeforeUnbookmark = try await statusesService.getOrginalStatus(id: requestedStatusId, on: request.db)
         guard let statusFromDatabaseBeforeUnbookmark else {
             throw EntityNotFoundError.statusNotFound
         }
+        let statusId = try statusFromDatabaseBeforeUnbookmark.requireID()
         
         // We have to verify if user have access to the status (it's not only for mentioned).
         let canView = try await statusesService.can(view: statusFromDatabaseBeforeUnbookmark, userId: authorizationPayloadId, on: request.executionContext)
@@ -2413,7 +2473,7 @@ struct StatusesController {
         if status.isLocal {
             try await request
                 .queues(.statusPinner)
-                .dispatch(StatusPinnerJob.self, statusId, maxRetryCount: 2)
+                .dispatch(StatusPinnerJob.self, statusId, maxRetryCount: 3)
         }
 
         guard let statusFromDatabaseAfterPin = try await statusesService.get(id: statusId, on: request.db) else {
@@ -2467,7 +2527,7 @@ struct StatusesController {
         if status.isLocal {
             try await request
                 .queues(.statusUnpinner)
-                .dispatch(StatusUnpinnerJob.self, statusId, maxRetryCount: 2)
+                .dispatch(StatusUnpinnerJob.self, statusId, maxRetryCount: 3)
         }
 
         guard let statusFromDatabaseAfterUnpin = try await statusesService.get(id: statusId, on: request.db) else {
@@ -3047,6 +3107,19 @@ struct StatusesController {
         )
     }
     
+    /// Keeps direct-message creation and replies on endpoints that record explicit recipients and inbox state.
+    private func validateStandardStatusRequest(_ dto: StatusRequestDto, on request: Request) async throws {
+        guard dto.visibility != .mentioned else {
+            throw StatusError.directMessagesRequireDedicatedEndpoint
+        }
+
+        if let parentId = dto.replyToStatusId?.toId(),
+           let parent = try await request.application.services.statusesService.getOrginalStatus(id: parentId, on: request.db),
+           parent.visibility == .mentioned || parent.$directConversation.id != nil {
+            throw StatusError.directMessagesRequireDedicatedEndpoint
+        }
+    }
+
     private func createNewStatusResponse(on request: Request, status: Status, attachments: [Attachment]) async throws -> Response {
         let statusServices = request.application.services.statusesService
         let createdStatusDto = await statusServices.convertToDto(status: status,

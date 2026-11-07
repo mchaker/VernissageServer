@@ -11,7 +11,7 @@ import Smtp
 import ActivityPubKit
 
 /**
- Bakcground job responsible for sending follow/unfollow requests to remote instances.
+ Background job responsible for sending follow/unfollow requests to remote instances.
  
  Request URL: `POST /shared/inbox`
  Request body:
@@ -45,7 +45,7 @@ import ActivityPubKit
  For follow request after sending request we have to expected that we will got `Accept` or `Reject` activity. Activity will be send
  automatically when user disabled manual approval or we have to wait for manual approval.
 */
-struct ActivityPubFollowRequesterJob: AsyncJob {
+struct ActivityPubFollowRequesterJob: RetryableAsyncJob {
     typealias Payload = ActivityPubFollowRequestDto
 
     func dequeue(_ context: QueueContext, _ payload: ActivityPubFollowRequestDto) async throws {
@@ -62,16 +62,22 @@ struct ActivityPubFollowRequesterJob: AsyncJob {
             return
         }
         
-        let activityPubClient = ActivityPubClient(privatePemKey: payload.privateKey, userAgent: Constants.userAgent, host: payload.sharedInbox.host)
-        
         do {
+            let activityPubClient = ActivityPubClient(privatePemKey: payload.privateKey,
+                                                      userAgent: Constants.userAgent,
+                                                      host: payload.sharedInbox.host)
+
             switch payload.type {
             case .follow:
-                try await activityPubClient.follow(payload.target, by: payload.source, on: payload.sharedInbox, withId: payload.id)
+                try await activityPubClient.follow(payload.target,
+                                                   by: payload.source,
+                                                   on: payload.sharedInbox,
+                                                   withId: payload.id)
             case .unfollow:
-                try await activityPubClient.unfollow(payload.target, by: payload.source, on: payload.sharedInbox, withId: payload.id)
-            case .move:
-                try await activityPubClient.move(payload.source, to: payload.target, on: payload.sharedInbox, withId: payload.id)
+                try await activityPubClient.unfollow(payload.target,
+                                                     by: payload.source,
+                                                     on: payload.sharedInbox,
+                                                     withId: payload.id)
             }
             
             try? await suspendedServersService.registerSuccess(for: payload.sharedInbox.host, on: executionContext)

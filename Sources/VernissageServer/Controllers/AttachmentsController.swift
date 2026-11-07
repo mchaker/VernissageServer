@@ -72,6 +72,7 @@ struct AttachmentsController {
 
     private struct AttachmentRequest: Content {
         var file: File
+        var useOriginalImage: Bool?
     }
 
     /// Upload new photo.
@@ -81,6 +82,11 @@ struct AttachmentsController {
     /// that kind of the requests. Many frameworks supports that kind of the requests out of the box.
     ///
     /// > Important: Endpoint URL: `/api/v1/attachments`.
+    ///
+    /// The optional multipart field `useOriginalImage` defaults to `false`. Set it to `true`
+    /// to preserve the uploaded file byte for byte, including C2PA and all metadata (also GPS).
+    /// A separate preview is generated as usual. The response reports the result as `originalImagePreserved`.
+    /// This option does not validate C2PA credentials.
     ///
     /// **CURL request:**
     ///
@@ -174,16 +180,27 @@ struct AttachmentsController {
             throw AttachmentError.imageRotationFailed
         }
 
-        // Export as a JPEG (without metadata).
-        guard let exportedBinary = try? rotatedImage.export(as: ExportableFormat.jpg(quality: -1)),
-              let exported = try? Image(data: exportedBinary) else {
-            throw AttachmentError.imageResizeFailed
+        // C2PA / original-image preservation disabled (fartgram): always re-encode without metadata.
+        // let useOriginalImage = attachmentRequest.useOriginalImage ?? false
+        let useOriginalImage = false
+        let originalFileName: String
+        let tmpExportedFileUrl: URL
+        if useOriginalImage {
+            // Preserve the uploaded bytes, including C2PA, EXIF and color profiles.
+            originalFileName = try OriginalImageFile.storageFileName(for: tmpOriginalFileUrl,
+                                                                     fallbackFileName: attachmentRequest.file.filename)
+            tmpExportedFileUrl = tmpOriginalFileUrl
+        } else {
+            // Export as a JPEG (without metadata), preserving the existing upload behavior.
+            guard let exportedBinary = try? rotatedImage.export(as: ExportableFormat.jpg(quality: -1)),
+                  let exported = try? Image(data: exportedBinary) else {
+                throw AttachmentError.imageResizeFailed
+            }
+
+            originalFileName = attachmentRequest.file.filename
+            tmpExportedFileUrl = try temporaryFileService.temporaryPath(based: originalFileName, on: request.executionContext)
+            exported.write(to: tmpExportedFileUrl, quality: imageQuality)
         }
-
-        // Save exported image in temp folder.
-        let tmpExportedFileUrl = try temporaryFileService.temporaryPath(based: attachmentRequest.file.filename, on: request.executionContext)
-        exported.write(to: tmpExportedFileUrl, quality: imageQuality)
-
         // Resize image.
         guard let resized = rotatedImage.resizedTo(width: 800) else {
             throw AttachmentError.imageResizeFailed
@@ -194,7 +211,7 @@ struct AttachmentsController {
         resized.write(to: tmpSmallFileUrl, quality: imageQuality)
 
         // Save exported image.
-        let savedExportedFileName = try await storageService.save(fileName: attachmentRequest.file.filename,
+        let savedExportedFileName = try await storageService.save(fileName: originalFileName,
                                                                   url: tmpExportedFileUrl,
                                                                   on: request.executionContext)
 
@@ -220,8 +237,8 @@ struct AttachmentsController {
         let attachment = try Attachment(id: attachmentId,
                                         userId: authorizationPayloadId,
                                         originalFileId: exportedFileInfo.requireID(),
-                                        smallFileId: smallFileInfo.requireID())
-
+                                        smallFileId: smallFileInfo.requireID(),
+                                        originalImagePreserved: useOriginalImage)
         // Operation in database should be performed in one transaction.
         try await request.db.transaction { database in
             try await exportedFileInfo.save(on: database)
@@ -231,7 +248,9 @@ struct AttachmentsController {
 
         // Remove temporary files.
         try await temporaryFileService.delete(url: tmpOriginalFileUrl, on: request.executionContext)
-        try await temporaryFileService.delete(url: tmpExportedFileUrl, on: request.executionContext)
+        if tmpExportedFileUrl != tmpOriginalFileUrl {
+            try await temporaryFileService.delete(url: tmpExportedFileUrl, on: request.executionContext)
+        }
         try await temporaryFileService.delete(url: tmpSmallFileUrl, on: request.executionContext)
 
         let baseImagesPath = request.application.services.storageService.getBaseImagesPath(on: request.executionContext)
@@ -534,7 +553,13 @@ struct AttachmentsController {
             attachment.$location.id = temporaryAttachmentDto.locationId?.toId()
             attachment.$license.id = temporaryAttachmentDto.licenseId?.toId()
 
-            if let exif = try await attachment.$exif.query(on: database).first() {
+            // Lock the attachment row before reading EXIF so concurrent updates cannot both create it.
+            try await attachment.save(on: database)
+
+            let existingExif = try await attachment.$exif.query(on: database).first()
+            let previousExif = existingExif.map(ExifTimelineMetadata.init)
+
+            if let exif = existingExif {
                 if temporaryAttachmentDto.hasAnyMetadata() {
                     exif.parameters = temporaryAttachmentDto.parameters
                     exif.workflow = temporaryAttachmentDto.workflow
@@ -588,7 +613,22 @@ struct AttachmentsController {
                 }
             }
 
-            try await attachment.save(on: database)
+            // We need to also refresh exif metadata for timelines after changing the attachemnent.
+            if let statusId = attachment.$status.id {
+                guard let status = try await Status.query(on: database)
+                    .filter(\.$id == statusId)
+                    .first() else {
+                    throw EntityNotFoundError.statusNotFound
+                }
+
+                try await request.application.services.exifService.synchronize(
+                    statusId: statusId,
+                    attachmentId: attachment.requireID(),
+                    previousExif: previousExif,
+                    visibility: status.visibility,
+                    on: request.executionContext.with(transaction: database)
+                )
+            }
         }
 
         return HTTPStatus.ok
@@ -698,7 +738,6 @@ struct AttachmentsController {
     ///
     /// - Throws: `EntityNotFoundError.attachmentNotFound` if attachment not exists.
     /// - Throws: `EntityForbiddenError.attachmentForbidden` if access to attachment is forbidden.
-    /// - Throws: `AttachmentError.attachmentAlreadyConnectedToStatus` if attachment already connected to status.
     /// - Throws: `OpenAIError.openAIIsNotEnabled` if OpenAI is not enabled.
     /// - Throws: `OpenAIError.openAIIsNotConfigured` if OpenAI is not configured.
     /// - Throws: `AttachmentError.attachmentIdIsRequired` if attachment id not specified.
@@ -765,7 +804,6 @@ struct AttachmentsController {
     ///
     /// - Throws: `EntityNotFoundError.attachmentNotFound` if attachment not exists.
     /// - Throws: `EntityForbiddenError.attachmentForbidden` if access to attachment is forbidden.
-    /// - Throws: `AttachmentError.attachmentAlreadyConnectedToStatus` if attachment already connected to status.
     /// - Throws: `OpenAIError.openAIIsNotEnabled` if OpenAI is not enabled.
     /// - Throws: `OpenAIError.openAIIsNotConfigured` if OpenAI is not configured.
     /// - Throws: `AttachmentError.attachmentIdIsRequired` if attachment id not specified.

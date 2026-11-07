@@ -33,6 +33,7 @@ struct ApplicationSettings {
     let showNewsForAnonymous: Bool
     let showSharedBusinessCards: Bool
     let imageQuality: Int
+    let alwaysCalculateCategory: Bool
     
     // Email settings.
     let emailFromAddress: String
@@ -75,6 +76,9 @@ struct ApplicationSettings {
     let showEditorsUsersChoiceForAnonymous: Bool
     let showHashtagsForAnonymous: Bool
     let showCategoriesForAnonymous: Bool
+    let showCamerasForAnonymous: Bool
+    let showLensesForAnonymous: Bool
+    let showFilmsForAnonymous: Bool
     
     // Enabled scheduled jobs.
     let clearAttachmentsJobEnabled: Bool
@@ -188,11 +192,15 @@ struct ApplicationSettings {
         self.showEditorsUsersChoiceForAnonymous = settingsFromDb.getBool(.showEditorsUsersChoiceForAnonymous) ?? false
         self.showHashtagsForAnonymous = settingsFromDb.getBool(.showHashtagsForAnonymous) ?? false
         self.showCategoriesForAnonymous = settingsFromDb.getBool(.showCategoriesForAnonymous) ?? false
+        self.showCamerasForAnonymous = settingsFromDb.getBool(.showCamerasForAnonymous) ?? false
+        self.showLensesForAnonymous = settingsFromDb.getBool(.showLensesForAnonymous) ?? false
+        self.showFilmsForAnonymous = settingsFromDb.getBool(.showFilmsForAnonymous) ?? false
         self.showNews = settingsFromDb.getBool(.showNews) ?? false
         self.showNewsForAnonymous = settingsFromDb.getBool(.showNewsForAnonymous) ?? false
         self.showSharedBusinessCards = settingsFromDb.getBool(.showSharedBusinessCards) ?? false
         self.imageQuality = settingsFromDb.getInt(.imageQuality) ?? Constants.imageQuality
-        
+        self.alwaysCalculateCategory = settingsFromDb.getBool(.alwaysCalculateCategory) ?? false
+
         self.clearAttachmentsJobEnabled = settingsFromDb.getBool(.clearAttachmentsJobEnabled) ?? false
         self.clearDeletedUsersJobEnabled = settingsFromDb.getBool(.clearDeletedUsersJobEnabled) ?? false
         self.clearErrorItemsJobEnabled = settingsFromDb.getBool(.clearErrorItemsJobEnabled) ?? false
