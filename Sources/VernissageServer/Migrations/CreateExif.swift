@@ -10,6 +10,24 @@ import SQLKit
 import SQLiteKit
 
 extension Exif {
+    /// `CreateExif` already creates some of these columns, so add-migrations must
+    /// skip them on fresh/fork databases while still running on old upstream ones.
+    static func columnExists(_ column: String, on database: Database) async throws -> Bool {
+        guard let sql = database as? SQLDatabase else {
+            return false
+        }
+
+        let query: SQLQueryString
+        if database is SQLiteDatabase {
+            query = "SELECT COUNT(*) AS \"count\" FROM pragma_table_info(\(bind: Exif.schema)) WHERE name = \(bind: column)"
+        } else {
+            query = "SELECT COUNT(*) AS \"count\" FROM information_schema.columns WHERE table_name = \(bind: Exif.schema) AND column_name = \(bind: column)"
+        }
+
+        let rows = try await sql.raw(query).all()
+        return (try rows.first?.decode(column: "count", as: Int.self) ?? 0) > 0
+    }
+
     struct CreateExif: AsyncMigration {
         func prepare(on database: Database) async throws {
             try await database
@@ -39,6 +57,10 @@ extension Exif {
 
     struct AddParameters: AsyncMigration {
         func prepare(on database: Database) async throws {
+            if try await Exif.columnExists("parameters", on: database) {
+                return
+            }
+
             try await database
                 .schema(Exif.schema)
                 .field("parameters", .varchar(10240))
@@ -55,6 +77,10 @@ extension Exif {
 
     struct AddWorkflow: AsyncMigration {
         func prepare(on database: Database) async throws {
+            if try await Exif.columnExists("workflow", on: database) {
+                return
+            }
+
             try await database
                 .schema(Exif.schema)
                 .field("workflow", .varchar(65536))
